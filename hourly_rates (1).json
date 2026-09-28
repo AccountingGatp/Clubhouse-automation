@@ -1,0 +1,376 @@
+{
+  "version": 1,
+  "currency": "USD",
+  "employees": [
+    {
+      "name": "Adrian Rodriguez",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Adriana Lopez",
+      "hourlyRate": 18.0,
+      "notes": ""
+    },
+    {
+      "name": "Alexander Torres",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Angie Hernandez",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Anielka Cano",
+      "hourlyRate": 17.87,
+      "notes": "Increased to@17.28 on 01/03/2025"
+    },
+    {
+      "name": "Arlin Sepulveda",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Blanca Mendoza",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Carlos Silva",
+      "hourlyRate": 30.0,
+      "notes": "Increased to@30 on 01/03/2025"
+    },
+    {
+      "name": "Crystal Aguilar",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Daniel Valle",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Deborah Duarte",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Dina Ceto",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Emily Hernandez",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Emmanuel Martinez",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Frank Saucedo",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Geidi Lopez",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Genesis Lopez",
+      "hourlyRate": 20.0,
+      "notes": "Increased from 09/10/2026"
+    },
+    {
+      "name": "Hazel",
+      "hourlyRate": 19.0,
+      "notes": "Old one"
+    },
+    {
+      "name": "Irene Herrera",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Iris Ruiz",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Jasmine Solis",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Jennifer Hernandez",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Jesus Alaniz",
+      "hourlyRate": 19.0,
+      "notes": ""
+    },
+    {
+      "name": "Jonathon Ramirez",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Jorge Hernandez",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Joselyn Raymundo",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Juan Salgado",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Karla Bonilla",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Katy Gonzalez",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Larry Raymond",
+      "hourlyRate": 25.0,
+      "notes": ""
+    },
+    {
+      "name": "Leah Lovos",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Leticia Valdez",
+      "hourlyRate": 19.0,
+      "notes": ""
+    },
+    {
+      "name": "Lucia Lopez",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Marco Garcia",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Natalie Cardona",
+      "hourlyRate": 17.75,
+      "notes": ""
+    },
+    {
+      "name": "Nicolas Andrade",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Nubia Cruz",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Eddy Lopez",
+      "hourlyRate": 17.78,
+      "notes": ""
+    },
+    {
+      "name": "Justin Lopez",
+      "hourlyRate": 17.78,
+      "notes": ""
+    },
+    {
+      "name": "Lissette Mejia",
+      "hourlyRate": 17.78,
+      "notes": ""
+    },
+    {
+      "name": "Tracy pea",
+      "hourlyRate": 17.78,
+      "notes": ""
+    },
+    {
+      "name": "winston Sanchez",
+      "hourlyRate": 17.78,
+      "notes": ""
+    },
+    {
+      "name": "Paola Sanchez",
+      "hourlyRate": 20.0,
+      "notes": "Increased to $20 on 07/28/2025"
+    },
+    {
+      "name": "Paul Bates",
+      "hourlyRate": 22.5,
+      "notes": "Increased from 09/10/2026"
+    },
+    {
+      "name": "Rommel Hernandez",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Rosa Santini",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Sandra Martinez",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Sergio Urbina",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Silvia Zelaya",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Valery Moreno",
+      "hourlyRate": 21.0,
+      "notes": "Increased to $21 on 01/03/2025"
+    },
+    {
+      "name": "Velinda Ordonez",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Vilma Cruz",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Yohana Rivas",
+      "hourlyRate": 17.87,
+      "notes": "Increased to $17.80 on 01/03/2025"
+    },
+    {
+      "name": "Yvette Chavez",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Yvette Oropeza",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Zaira Castaneda",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Aishley Mendoza",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Alba Espinoza",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Gloria Cajina",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Gloria Espinoza",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Adriana Rivera",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Hazel Herrera",
+      "hourlyRate": 25.0,
+      "notes": ""
+    },
+    {
+      "name": "Gringel Gonzalez",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Tamas Pazsicky",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Paola Rodriguez",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Julie Garcia",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Azucena Gomez",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Elysia Castro",
+      "hourlyRate": 20.0,
+      "notes": ""
+    },
+    {
+      "name": "Alejandro Armenta",
+      "hourlyRate": 17.87,
+      "notes": ""
+    },
+    {
+      "name": "Sylvia Lopez",
+      "hourlyRate": 20.0,
+      "notes": "Increased from 09/10/2026"
+    },
+    {
+      "name": "Bryan Centeno",
+      "hourlyRate": 17.78,
+      "notes": ""
+    },
+    {
+      "name": "Scarlette Chacon",
+      "hourlyRate": 17.78,
+      "notes": ""
+    },
+    {
+      "name": "Azucena Zuceth",
+      "hourlyRate": 20.0,
+      "notes": ""
+    },
+    {
+      "name": "German Jimenez",
+      "hourlyRate": 17.78,
+      "notes": ""
+    }
+  ]
+}

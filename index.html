@@ -1,0 +1,1392 @@
+<title>Clubhouse Payroll Ledger</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/decimal.js/10.4.3/decimal.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f4f5f1;
+    --surface: #ffffff;
+    --surface-2: #edefe9;
+    --border: #dfe2da;
+    --text: #1b241d;
+    --text-muted: #5c6a5e;
+    --accent: #2f5233;
+    --accent-strong: #23401f;
+    --accent-contrast: #ffffff;
+    --gold: #a9793a;
+    --gold-bg: #f7ecd9;
+    --ok: #1e7d4b;
+    --ok-bg: #e5f3ea;
+    --warn: #b7791f;
+    --warn-bg: #fcf1dc;
+    --err: #b3261e;
+    --err-bg: #fbe9e7;
+    --shadow: 0 1px 2px rgba(20, 30, 20, 0.06), 0 4px 14px rgba(20, 30, 20, 0.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #14170f;
+      --surface: #1c2018;
+      --surface-2: #232a1e;
+      --border: #333c2c;
+      --text: #eaf0e6;
+      --text-muted: #a3ae9d;
+      --accent: #6fae72;
+      --accent-strong: #8dc48f;
+      --accent-contrast: #0d160d;
+      --gold: #d3a45f;
+      --gold-bg: #33291a;
+      --ok: #6fcb93;
+      --ok-bg: #17301f;
+      --warn: #e0b25a;
+      --warn-bg: #332b16;
+      --err: #f0897f;
+      --err-bg: #33201d;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 14px rgba(0, 0, 0, 0.25);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #14170f;
+    --surface: #1c2018;
+    --surface-2: #232a1e;
+    --border: #333c2c;
+    --text: #eaf0e6;
+    --text-muted: #a3ae9d;
+    --accent: #6fae72;
+    --accent-strong: #8dc48f;
+    --accent-contrast: #0d160d;
+    --gold: #d3a45f;
+    --gold-bg: #33291a;
+    --ok: #6fcb93;
+    --ok-bg: #17301f;
+    --warn: #e0b25a;
+    --warn-bg: #332b16;
+    --err: #f0897f;
+    --err-bg: #33201d;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 14px rgba(0, 0, 0, 0.25);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    padding-inline: 16px;
+    padding-block: 24px;
+    line-height: 1.45;
+  }
+  .app {
+    max-width: 1080px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+  h1, h2, h3 { font-family: "Fraunces", Georgia, serif; text-wrap: balance; margin: 0; }
+  h1 { font-size: 1.7rem; font-weight: 600; }
+  h2 { font-size: 1.15rem; font-weight: 600; color: var(--text); }
+  .num { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
+
+  /* header */
+  .topbar {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+  }
+  .topbar .eyebrow {
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+  .week-chip {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.82rem;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 5px 14px;
+    color: var(--text-muted);
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+    box-shadow: var(--shadow);
+  }
+  .card > h2 { margin-bottom: 14px; }
+  .card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+
+  /* upload */
+  .dropzone {
+    border: 1.5px dashed var(--border);
+    border-radius: 12px;
+    padding: 26px 18px;
+    text-align: center;
+    background: var(--surface-2);
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .dropzone:hover, .dropzone.drag { border-color: var(--accent); background: var(--gold-bg); }
+  .dropzone input { display: none; }
+  .dropzone .label { font-weight: 600; }
+  .dropzone .sub { color: var(--text-muted); font-size: 0.85rem; margin-top: 4px; }
+
+  .upload-meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .meta-tile {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+  }
+  .meta-tile .k { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+  .meta-tile .v { font-family: "IBM Plex Mono", monospace; font-size: 1.05rem; margin-top: 2px; }
+
+  button {
+    font: inherit;
+    border: none;
+    border-radius: 9px;
+    padding: 10px 18px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: filter 0.12s, transform 0.05s;
+  }
+  button:active { transform: translateY(1px); }
+  button.primary { background: var(--accent); color: var(--accent-contrast); }
+  button.primary:hover { filter: brightness(1.08); }
+  button.primary:disabled { background: var(--border); color: var(--text-muted); cursor: not-allowed; }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  button.ghost:hover { background: var(--surface-2); }
+  button.small { padding: 5px 11px; font-size: 0.8rem; }
+  button.danger { background: transparent; color: var(--err); border: 1px solid var(--err); }
+
+  /* validation */
+  .banner {
+    border-radius: 12px;
+    padding: 14px 16px;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .banner.err { background: var(--err-bg); color: var(--err); }
+  .banner.ok { background: var(--ok-bg); color: var(--ok); }
+  .banner ul { margin: 6px 0 0; padding-left: 18px; }
+  .banner .title { font-weight: 700; }
+
+  /* summary grid */
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 12px;
+  }
+  .stat-tile {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+  }
+  .stat-tile .k { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); font-weight: 600; }
+  .stat-tile .v { font-family: "IBM Plex Mono", monospace; font-size: 1.5rem; margin-top: 4px; font-weight: 600; }
+  .stat-tile.final { background: var(--gold-bg); border-color: var(--gold); }
+  .stat-tile.final .v { color: var(--gold); font-size: 1.7rem; }
+
+  /* tables */
+  .table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.86rem; min-width: 720px; }
+  thead th {
+    background: var(--accent);
+    color: var(--accent-contrast);
+    font-weight: 700;
+    text-align: center;
+    padding: 9px 10px;
+    position: sticky;
+    top: 0;
+    white-space: nowrap;
+  }
+  tbody td {
+    padding: 8px 10px;
+    border-top: 1px solid var(--border);
+    text-align: right;
+    white-space: nowrap;
+  }
+  tbody td:first-child, thead th:first-child { text-align: left; }
+  tbody tr:nth-child(even) { background: var(--surface-2); }
+  tbody tr.excluded { opacity: 0.55; font-style: italic; }
+  .pill {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+  }
+  .pill.ok { background: var(--ok-bg); color: var(--ok); }
+  .pill.warn { background: var(--warn-bg); color: var(--warn); }
+  .pill.muted { background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--border); }
+
+  /* config */
+  details.config summary {
+    cursor: pointer;
+    font-weight: 600;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  details.config summary::-webkit-details-marker { display: none; }
+  details.config summary::before { content: "\25B8"; transition: transform 0.15s; display: inline-block; }
+  details.config[open] summary::before { transform: rotate(90deg); }
+  .config-body { padding-top: 16px; display: flex; flex-direction: column; gap: 18px; }
+  .config-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+  label.field { display: flex; flex-direction: column; gap: 4px; font-size: 0.82rem; color: var(--text-muted); font-weight: 600; }
+  input[type=text], input[type=number] {
+    font: inherit;
+    padding: 7px 10px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    width: 100%;
+  }
+  input[type=text]:focus, input[type=number]:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 3px 8px 3px 12px;
+    font-size: 0.8rem;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .tag button { background: none; border: none; padding: 0; color: var(--text-muted); font-weight: 700; cursor: pointer; }
+  footer { text-align: center; color: var(--text-muted); font-size: 0.78rem; padding-block: 10px; }
+</style>
+
+<div class="app">
+  <div class="topbar">
+    <div>
+      <div class="eyebrow">Payroll Billing Dashboard</div>
+      <h1>Clubhouse Payroll Ledger</h1>
+    </div>
+    <span class="week-chip" id="weekChip">No timesheet loaded</span>
+  </div>
+
+  <!-- Configuration Missing (blocking) -->
+  <div id="configMissingSlot"></div>
+
+  <!-- Upload -->
+  <section class="card" id="uploadCard">
+    <h2>Upload weekly timesheet</h2>
+    <label class="dropzone" id="dropzone" for="fileInput">
+      <div class="label" id="dropLabel">Drop the timesheet CSV here, or click to choose a file</div>
+      <div class="sub">QuickBooks Time / TSheets weekly export (.csv)</div>
+      <input type="file" id="fileInput" accept=".csv,text/csv" />
+    </label>
+    <div class="upload-meta" id="uploadMeta" hidden>
+      <div class="meta-tile"><div class="k">File</div><div class="v" id="metaFile">—</div></div>
+      <div class="meta-tile"><div class="k">Detected week</div><div class="v" id="metaWeek">—</div></div>
+      <div class="meta-tile"><div class="k">Employees</div><div class="v" id="metaEmployees">—</div></div>
+    </div>
+    <div class="row-actions" style="margin-top:16px;">
+      <button class="primary" id="processBtn" disabled>Process timesheet</button>
+      <button class="ghost" id="downloadBtn" disabled>Download Excel workbook</button>
+    </div>
+  </section>
+
+  <!-- Validation -->
+  <div id="validationSlot"></div>
+
+  <!-- Summary -->
+  <section class="card" id="summaryCard" hidden>
+    <h2>Summary</h2>
+    <div class="stat-grid" id="statGrid"></div>
+  </section>
+
+  <!-- Employee review -->
+  <section class="card" id="employeeCard" hidden>
+    <h2>Employee review</h2>
+    <div class="table-scroll">
+      <table id="employeeTable">
+        <thead>
+          <tr>
+            <th>Employee</th><th>Work</th><th>Rest</th><th>Lunch</th><th>Paid</th>
+            <th>Regular</th><th>OT</th><th>Clubhouse Hrs</th><th>Ratio</th><th>Rate</th>
+            <th>OT Rate</th><th>Reg Gross</th><th>OT Gross</th><th>Total Gross</th>
+            <th>Emp. Tax</th><th>WC</th><th>Bill</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="employeeBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Config -->
+  <section class="card">
+    <details class="config" id="configDetails">
+      <summary><h2 style="display:inline">Configuration</h2></summary>
+      <div class="config-body">
+        <p style="color:var(--text-muted); font-size:0.85rem; margin:0;">
+          Rates and settings below drive every calculation. Nothing here is hardcoded in the app.
+          If <code>hourly_rates.json</code> / <code>payroll_config.json</code> sit next to this
+          page (e.g. in the same GitHub repo folder), they're loaded automatically on every visit —
+          just edit and commit the JSON to update rates, no code changes needed. Otherwise edits
+          made here are saved in this browser and used on future visits.
+        </p>
+
+        <div>
+          <div class="card-head">
+            <h3 style="font-family:inherit;font-size:1rem;">Hourly rates (hourly_rates.json)</h3>
+            <div class="row-actions">
+              <button class="ghost small" id="addRateRow">+ Add employee</button>
+              <button class="ghost small" id="exportRates">Export JSON</button>
+              <label class="ghost small" style="cursor:pointer;">Import JSON
+                <input type="file" id="importRates" accept="application/json" hidden>
+              </label>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table id="ratesTable">
+              <thead><tr><th>Name</th><th>Hourly rate</th><th>Notes</th><th></th></tr></thead>
+              <tbody id="ratesBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="config-grid">
+          <label class="field">Employer tax rate — default %
+            <input type="number" step="0.0001" id="cfgTaxDefault">
+          </label>
+          <label class="field">Workers' comp rate — general labor
+            <input type="number" step="0.0001" id="cfgWcDefault">
+          </label>
+          <label class="field">Service charge rate (%)
+            <input type="number" step="0.1" id="cfgServiceCharge">
+          </label>
+          <label class="field">Daily regular-hours limit
+            <input type="number" step="0.5" id="cfgDailyLimit">
+          </label>
+          <label class="field">Overtime rate multiplier
+            <input type="number" step="0.1" id="cfgOtMultiplier">
+          </label>
+          <label class="field">Max days in one weekly upload
+            <input type="number" step="1" id="cfgMaxWeekDays">
+          </label>
+        </div>
+
+        <div>
+          <h3 style="font-family:inherit;font-size:1rem;">Job classifications (job-code based)</h3>
+          <p style="color:var(--text-muted); font-size:0.82rem; margin:4px 0 8px;">
+            The app reads this straight from the timesheet, not from any name list: if <em>any</em> of
+            an employee's job codes that week contains a keyword below, that classification applies to
+            them for the week. Its workers' comp rate and its Clubhouse-exclusion flag are independent
+            settings — a classification can give someone a special WC rate without excluding them from
+            Clubhouse billing, or the reverse, purely based on what's configured here. Classified
+            employees always show up in the NewClubhouse sheet and every audit sheet, so nothing is
+            hidden even when excluded from billing.
+          </p>
+          <div class="table-scroll"><table id="jobClassTable">
+            <thead><tr><th>Job-code keyword</th><th>WC rate</th><th>Exclude from Clubhouse?</th><th></th></tr></thead>
+            <tbody id="jobClassBody"></tbody>
+          </table></div>
+          <button class="ghost small" id="addJobClass" style="margin-top:8px;">+ Add classification</button>
+        </div>
+
+        <div>
+          <h3 style="font-family:inherit;font-size:1rem;">Clubhouse team roster</h3>
+          <p style="color:var(--text-muted); font-size:0.82rem; margin:4px 0 8px;">
+            Per the team's SOP, this list — not each employee's computed Clubhouse ratio — decides who
+            appears as a row in the NewClubhouse sheet each week. A roster member with 0% Clubhouse
+            hours that week still gets a $0 row (for audit continuity); anyone not on this list never
+            appears on the report, even if a job code happens to touch Clubhouse/BluntD/Crysp. Keep this
+            list updated as the team changes. If left empty, the app falls back to automatic detection
+            (billable ratio or a matching job classification) as a default.
+          </p>
+          <div class="tag-list" id="rosterTags"></div>
+          <div class="row-actions" style="margin-top:8px;">
+            <input type="text" id="newRoster" placeholder="Employee full name" style="max-width:220px;">
+            <button class="ghost small" id="addRoster">Add</button>
+          </div>
+        </div>
+
+        <div>
+          <h3 style="font-family:inherit;font-size:1rem;">Clubhouse billing exclusions</h3>
+          <p style="color:var(--text-muted); font-size:0.82rem; margin:4px 0 8px;">
+            Roster members whose pay for this period is calculated in a separate process and must not be
+            billed here (e.g. Hazel Herrera / Paul Bates / Elysia Castro per the current SOP). This is a
+            manual, name-based list, independent of any job-code classification — a special workers'
+            comp rate (below) does not by itself exclude anyone. Employees listed here are omitted from
+            the NewClubhouse rows entirely (shown in a footnote instead) and never affect the subtotal.
+          </p>
+          <div class="tag-list" id="exclusionTags"></div>
+          <div class="row-actions" style="margin-top:8px;">
+            <input type="text" id="newExclusion" placeholder="Employee full name" style="max-width:220px;">
+            <button class="ghost small" id="addExclusion">Add</button>
+          </div>
+        </div>
+
+        <div>
+          <h3 style="font-family:inherit;font-size:1rem;">Employer tax rate — per-employee overrides</h3>
+          <div class="table-scroll"><table id="taxOverrideTable">
+            <thead><tr><th>Employee</th><th>Rate %</th><th></th></tr></thead>
+            <tbody id="taxOverrideBody"></tbody>
+          </table></div>
+          <button class="ghost small" id="addTaxOverride" style="margin-top:8px;">+ Add override</button>
+        </div>
+
+        <div>
+          <h3 style="font-family:inherit;font-size:1rem;">Workers' comp rate — per-employee overrides</h3>
+          <div class="table-scroll"><table id="wcOverrideTable">
+            <thead><tr><th>Employee</th><th>Rate</th><th></th></tr></thead>
+            <tbody id="wcOverrideBody"></tbody>
+          </table></div>
+          <button class="ghost small" id="addWcOverride" style="margin-top:8px;">+ Add override</button>
+        </div>
+
+        <div>
+          <h3 style="font-family:inherit;font-size:1rem;">Entity job-code keywords</h3>
+          <p style="color:var(--text-muted); font-size:0.82rem; margin:4px 0 8px;">
+            A work row counts toward an entity when any of its job codes contains one of that entity's keywords.
+          </p>
+          <div class="config-grid" id="entityKeywordGrid"></div>
+        </div>
+
+        <div class="row-actions">
+          <button class="primary small" id="saveConfig">Save configuration</button>
+          <button class="danger small" id="resetConfig">Discard local edits &amp; reload from JSON files</button>
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <footer>Calculations run entirely in your browser. Nothing is uploaded anywhere.</footer>
+</div>
+
+<script>
+/* =====================================================================
+   CONFIG LOADING — no employee names, rates, tax rates, WC rates, or
+   business rules are embedded in this file. Everything comes from
+   hourly_rates.json and payroll_config.json, fetched from the same
+   folder as this page (e.g. a GitHub Pages repo). If either file can't
+   be loaded (and there's no previously-saved copy from a prior visit in
+   this browser), the app shows a blocking "Configuration Missing" state
+   and refuses to process anything — it never invents data to fall back
+   on.
+   ===================================================================== */
+const STORAGE_KEY = 'clubhouse-payroll-config-v1';
+
+function loadCachedConfig() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.hourlyRates && parsed.payrollConfig) return parsed;
+    }
+  } catch (e) { /* ignore, storage unavailable */ }
+  return null;
+}
+function saveConfigToStorage(cfg) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg)); } catch (e) { /* storage unavailable */ }
+}
+
+async function fetchJsonIfPresent(path) {
+  try {
+    const res = await fetch(path, { cache: 'no-store' });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) {
+    return null; // file:// CORS, offline, or file not present
+  }
+}
+
+// Tries hourly_rates.json / payroll_config.json next to this page first
+// (the source of truth — editing/committing the JSON is enough to update
+// rates or rules, no code change). Falls back to whatever this browser
+// cached from the last successful load, ONLY as a convenience for
+// re-visiting the same machine. If neither is available, returns null —
+// the caller must block, not substitute made-up data.
+async function loadConfigFromFilesOrCache() {
+  const [rates, payroll] = await Promise.all([
+    fetchJsonIfPresent('./hourly_rates.json'),
+    fetchJsonIfPresent('./payroll_config.json'),
+  ]);
+  const cached = loadCachedConfig();
+  const hourlyRates = (rates && rates.employees) ? rates : (cached ? cached.hourlyRates : null);
+  const payrollConfig = (payroll && payroll.entityKeywords) ? payroll : (cached ? cached.payrollConfig : null);
+  if (!hourlyRates || !payrollConfig) return null;
+  if (rates && rates.employees && payroll && payroll.entityKeywords) saveConfigToStorage({ hourlyRates, payrollConfig });
+  return { hourlyRates, payrollConfig };
+}
+
+let CONFIG = null; // null until loadConfigFromFilesOrCache() resolves in init() below
+let CONFIG_MISSING = false;
+let CURRENT_RESULT = null;
+let CURRENT_FILENAME = null;
+
+/* =====================================================================
+   PAYROLL ENGINE — pure calculation modules (parseTimesheet,
+   normalizeEmployees, classifyJobCodes, calculateDailyHours,
+   calculateWeeklyHours, calculateEntityRatios, calculatePayroll,
+   calculateTax, calculateWorkersComp, calculateInvoice). No employee
+   names, rates, dates or totals are hardcoded anywhere below.
+   ===================================================================== */
+const Engine = (function () {
+  const D = (v) => new Decimal(v === undefined || v === null || v === '' ? 0 : v);
+
+  function parseTimesheet(rows) {
+    const records = [];
+    const errors = [];
+    rows.forEach((row, idx) => {
+      const lineNo = idx + 2;
+      const fname = (row.fname || '').trim();
+      const lname = (row.lname || '').trim();
+      const employeeName = `${fname} ${lname}`.trim();
+      const localDate = (row.local_date || '').trim();
+      const localDay = (row.local_day || '').trim();
+      const jobcode1 = (row.jobcode_1 || '').trim();
+      const jobcode2 = (row.jobcode_2 || '').trim();
+      const jobcode3 = (row.jobcode_3 || '').trim();
+      const hoursRaw = row.hours;
+
+      if (!employeeName) { errors.push({ line: lineNo, type: 'MISSING_EMPLOYEE', message: `Row ${lineNo}: missing employee name` }); return; }
+      if (!localDate || !/^\d{4}-\d{2}-\d{2}$/.test(localDate)) { errors.push({ line: lineNo, type: 'INVALID_DATE', message: `Row ${lineNo} (${employeeName}): invalid or missing date "${localDate}"` }); return; }
+      const hours = Number(hoursRaw);
+      if (hoursRaw === undefined || hoursRaw === null || hoursRaw === '' || isNaN(hours) || hours < 0) { errors.push({ line: lineNo, type: 'INVALID_HOURS', message: `Row ${lineNo} (${employeeName}): invalid hours value "${hoursRaw}"` }); return; }
+
+      records.push({ line: lineNo, employeeName, fname, lname, localDate, localDay, startTime: row.local_start_time || '', endTime: row.local_end_time || '', jobcode1, jobcode2, jobcode3, location: row.location || '', hours });
+    });
+    return { records, errors };
+  }
+
+  // Exact-duplicate detection: same employee, date, start/end time, job
+  // codes and hours. Keeps the first occurrence and flags every later
+  // exact repeat so it never gets silently double-counted into hours or
+  // dollars.
+  function detectDuplicateRows(records) {
+    const seen = new Map();
+    const duplicates = [];
+    const deduped = [];
+    records.forEach((r) => {
+      const key = [r.employeeName, r.localDate, r.startTime, r.endTime, r.jobcode1, r.jobcode2, r.jobcode3, r.hours].join('|').toLowerCase();
+      if (seen.has(key)) {
+        duplicates.push({ line: r.line, firstLine: seen.get(key), employeeName: r.employeeName, localDate: r.localDate });
+      } else {
+        seen.set(key, r.line);
+        deduped.push(r);
+      }
+    });
+    return { records: deduped, duplicates };
+  }
+
+  function normalizeEmployees(records) {
+    const names = new Set(); const dates = [];
+    records.forEach((r) => { names.add(r.employeeName); dates.push(r.localDate); });
+    const sorted = dates.slice().sort();
+    return { employees: Array.from(names).sort((a, b) => a.localeCompare(b)), weekStart: sorted[0] || null, weekEnd: sorted[sorted.length - 1] || null };
+  }
+
+  // Every WORK row must resolve to exactly ONE billing entity:
+  //   0 matches -> UNMAPPED  (blocks: "Unmapped Job Code")
+  //   >1 matches -> AMBIGUOUS (blocks: "Ambiguous Job Code")
+  //   1 match   -> OK, hours go to that one entity only
+  // This prevents the same source hours ever being allocated to more than
+  // one entity (e.g. a job code hierarchy that happens to contain both
+  // "Clubhouse" and "BluntD").
+  function classifyJobCodes(record, config) {
+    const codesLower = [record.jobcode1, record.jobcode2, record.jobcode3].map((c) => (c || '').toLowerCase());
+    const combined = codesLower.join(' ');
+    const restKeywords = (config.breakKeywords && config.breakKeywords.rest) || ['rest break'];
+    const lunchKeywords = (config.breakKeywords && config.breakKeywords.lunch) || ['lunch break'];
+    const j1 = codesLower[0];
+    if (restKeywords.some((k) => j1 === k.toLowerCase())) return { rowType: 'REST', entities: [], status: 'OK' };
+    if (lunchKeywords.some((k) => j1 === k.toLowerCase())) return { rowType: 'LUNCH', entities: [], status: 'OK' };
+    const entities = [];
+    const entityKeywords = config.entityKeywords || {};
+    Object.keys(entityKeywords).forEach((entityName) => {
+      const keywords = entityKeywords[entityName] || [];
+      if (keywords.some((k) => combined.includes(k.toLowerCase()))) entities.push(entityName);
+    });
+    const status = entities.length === 0 ? 'UNMAPPED' : entities.length > 1 ? 'AMBIGUOUS' : 'OK';
+    return { rowType: 'WORK', entities, status };
+  }
+
+  function calculateDailyHours(records, config) {
+    const byEmpDay = new Map();
+    const unmappedRows = [];
+    const ambiguousRows = [];
+    // dailyRegularLimit is required config (validated in runPipeline via
+    // validatePayrollConfig, which blocks generation if it's missing);
+    // this fallback only keeps the preview from crashing while blocked.
+    const dailyLimit = D(config.dailyRegularLimit !== undefined && config.dailyRegularLimit !== null ? config.dailyRegularLimit : 8);
+    records.forEach((r) => {
+      const cls = classifyJobCodes(r, config);
+      const key = `${r.employeeName}|${r.localDate}`;
+      if (!byEmpDay.has(key)) byEmpDay.set(key, { employeeName: r.employeeName, localDate: r.localDate, localDay: r.localDay, workHours: D(0), restHours: D(0), lunchHours: D(0), entityHours: {} });
+      const acc = byEmpDay.get(key);
+      const hrs = D(r.hours);
+      if (cls.rowType === 'REST') acc.restHours = acc.restHours.plus(hrs);
+      else if (cls.rowType === 'LUNCH') acc.lunchHours = acc.lunchHours.plus(hrs);
+      else {
+        acc.workHours = acc.workHours.plus(hrs);
+        if (cls.status === 'UNMAPPED') unmappedRows.push({ line: r.line, employee: r.employeeName, date: r.localDate, jobcode1: r.jobcode1, jobcode2: r.jobcode2, jobcode3: r.jobcode3 });
+        else if (cls.status === 'AMBIGUOUS') ambiguousRows.push({ line: r.line, employee: r.employeeName, date: r.localDate, jobcode1: r.jobcode1, jobcode2: r.jobcode2, jobcode3: r.jobcode3, matches: cls.entities });
+        else cls.entities.forEach((entityName) => { acc.entityHours[entityName] = (acc.entityHours[entityName] || D(0)).plus(hrs); });
+      }
+    });
+    const daily = Array.from(byEmpDay.values()).map((acc) => {
+      const paidHours = acc.workHours.plus(acc.restHours);
+      const regularHours = Decimal.min(paidHours, dailyLimit);
+      const otHours = Decimal.max(paidHours.minus(dailyLimit), 0);
+      return { employeeName: acc.employeeName, localDate: acc.localDate, localDay: acc.localDay, workHours: acc.workHours, restHours: acc.restHours, lunchHours: acc.lunchHours, paidHours, regularHours, otHours, entityHours: acc.entityHours };
+    });
+    daily.sort((a, b) => a.employeeName.localeCompare(b.employeeName) || a.localDate.localeCompare(b.localDate));
+    return { daily, unmappedRows, ambiguousRows };
+  }
+
+  function calculateWeeklyHours(dailyRows) {
+    const byEmp = new Map();
+    dailyRows.forEach((d) => {
+      if (!byEmp.has(d.employeeName)) byEmp.set(d.employeeName, { employeeName: d.employeeName, workHours: D(0), restHours: D(0), lunchHours: D(0), paidHours: D(0), regularHours: D(0), otHours: D(0), entityHours: {} });
+      const acc = byEmp.get(d.employeeName);
+      acc.workHours = acc.workHours.plus(d.workHours); acc.restHours = acc.restHours.plus(d.restHours); acc.lunchHours = acc.lunchHours.plus(d.lunchHours);
+      acc.paidHours = acc.paidHours.plus(d.paidHours); acc.regularHours = acc.regularHours.plus(d.regularHours); acc.otHours = acc.otHours.plus(d.otHours);
+      Object.keys(d.entityHours).forEach((ent) => { acc.entityHours[ent] = (acc.entityHours[ent] || D(0)).plus(d.entityHours[ent]); });
+    });
+    return Array.from(byEmp.values()).sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+  }
+
+  function calculateEntityRatios(weeklyRows, config) {
+    const entityNames = Object.keys(config.entityKeywords || {});
+    return weeklyRows.map((w) => {
+      const totalEntityHours = entityNames.reduce((sum, name) => sum.plus(w.entityHours[name] || D(0)), D(0));
+      const clubhouseHours = w.entityHours['Clubhouse'] || D(0);
+      let clubhouseRatio = D(0);
+      if (!totalEntityHours.isZero()) clubhouseRatio = clubhouseHours.div(totalEntityHours).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+      return { employeeName: w.employeeName, totalEntityHours, clubhouseHours, clubhouseRatio, entityHours: w.entityHours };
+    });
+  }
+
+  function getEmployeeHourlyRate(employeeName, hourlyRatesConfig) {
+    const found = (hourlyRatesConfig.employees || []).find((x) => x.name.trim().toLowerCase() === employeeName.trim().toLowerCase());
+    return found ? found.hourlyRate : null;
+  }
+
+  // Job-code-driven, no employee names involved: for each employee, look
+  // at every job code (1/2/3, any row) for a match against the keys of
+  // payrollConfig.jobClassifications (e.g. "supervision"). The first
+  // matching classification's config — { wcRate, excludeFromClubhouse } —
+  // is attached to that employee for the week. This is what distinguishes
+  // e.g. Carlos Silva (job code "Supervision") from ordinary
+  // Clubhouse/BluntD/Crysp staff — not his name.
+  //
+  // wcRate and excludeFromClubhouse are two INDEPENDENT settings on the
+  // same classification, not one automatic combined rule: a classification
+  // can carry a special WC rate without being excluded from Clubhouse
+  // billing, or vice versa, purely based on what payroll_config.json says.
+  function detectJobClassifications(records, config) {
+    const classifications = config.jobClassifications || {};
+    const keys = Object.keys(classifications);
+    const byEmployee = new Map();
+    if (!keys.length) return byEmployee;
+    records.forEach((r) => {
+      if (byEmployee.has(r.employeeName)) return;
+      const combined = [r.jobcode1, r.jobcode2, r.jobcode3].join(' ').toLowerCase();
+      for (const key of keys) {
+        if (combined.includes(key.toLowerCase())) {
+          byEmployee.set(r.employeeName, Object.assign({ keyword: key }, classifications[key]));
+          break;
+        }
+      }
+    });
+    return byEmployee;
+  }
+
+  function calculatePayroll(weeklyRows, ratioRows, hourlyRatesConfig, payrollConfig, classifications) {
+    const ratioByName = new Map(ratioRows.map((r) => [r.employeeName, r]));
+    const manualExclusions = new Set((payrollConfig.clubhouseExclusions || []).map((n) => n.trim().toLowerCase()));
+    classifications = classifications || new Map();
+    // overtimeMultiplier is required config (validated upstream); fallback
+    // here only keeps the preview from crashing while generation is blocked.
+    const overtimeMultiplier = payrollConfig.overtimeMultiplier !== undefined && payrollConfig.overtimeMultiplier !== null ? payrollConfig.overtimeMultiplier : 1.5;
+    return weeklyRows.map((w) => {
+      const ratioInfo = ratioByName.get(w.employeeName);
+      const hourlyRate = getEmployeeHourlyRate(w.employeeName, hourlyRatesConfig);
+      const classification = classifications.get(w.employeeName) || null;
+      // Excluded from Clubhouse billing if named on the manual override
+      // list, OR because their job-code classification explicitly says
+      // excludeFromClubhouse: true — a WC-rate classification alone does
+      // NOT exclude anyone unless configuration says so.
+      const isExcluded = manualExclusions.has(w.employeeName.trim().toLowerCase()) || !!(classification && classification.excludeFromClubhouse);
+      const result = { employeeName: w.employeeName, workHours: w.workHours, restHours: w.restHours, lunchHours: w.lunchHours, paidHours: w.paidHours, regularHours: w.regularHours, otHours: w.otHours, clubhouseRatio: ratioInfo ? ratioInfo.clubhouseRatio : D(0), entityHours: w.entityHours, hourlyRate, classification, isExcluded, errors: [] };
+      if (hourlyRate === null || hourlyRate === undefined) { result.errors.push('MISSING_HOURLY_RATE'); result.status = 'Missing Hourly Rate'; return result; }
+      const effectiveRatio = isExcluded ? D(0) : result.clubhouseRatio;
+      const clubhouseRegularHours = w.regularHours.times(effectiveRatio);
+      const clubhouseOtHours = w.otHours.times(effectiveRatio);
+      const regularRate = D(hourlyRate);
+      const otRate = regularRate.times(overtimeMultiplier);
+      const regularGross = clubhouseRegularHours.times(regularRate);
+      const otGross = clubhouseOtHours.times(otRate);
+      const totalGross = regularGross.plus(otGross);
+      Object.assign(result, { clubhouseRegularHours, clubhouseOtHours, regularRate, otRate, regularGross, otGross, totalGross, status: 'OK' });
+      return result;
+    });
+  }
+
+  function getEmployerTaxRate(employeeName, taxConfig) {
+    const overrides = taxConfig.overrides || {};
+    const match = Object.keys(overrides).find((k) => k.trim().toLowerCase() === employeeName.trim().toLowerCase());
+    if (match !== undefined) return D(overrides[match]);
+    if (taxConfig.defaultRatePercent === undefined || taxConfig.defaultRatePercent === null) return null;
+    return D(taxConfig.defaultRatePercent);
+  }
+  function calculateTax(payrollRows, taxConfig) {
+    return payrollRows.map((row) => {
+      if (row.errors.length) return { ...row };
+      const taxRatePercent = getEmployerTaxRate(row.employeeName, taxConfig);
+      if (taxRatePercent === null) return { ...row, errors: [...row.errors, 'MISSING_TAX_RATE'], status: 'Missing Employer Tax Rate' };
+      const employerTax = row.totalGross.times(taxRatePercent).div(100);
+      return { ...row, employerTaxRatePercent: taxRatePercent, employerTax };
+    });
+  }
+
+  function getWcRate(employeeName, wcConfig, classification) {
+    // A per-employee override always wins (manual escape hatch). Otherwise
+    // pick the rate from the employee's job classification if it defines
+    // one, else the general defaultRate — no employee name decides this,
+    // the job-code-derived classification does.
+    const overrides = wcConfig.overrides || {};
+    const match = Object.keys(overrides).find((k) => k.trim().toLowerCase() === employeeName.trim().toLowerCase());
+    if (match !== undefined) return D(overrides[match]);
+    if (classification && classification.wcRate !== undefined && classification.wcRate !== null) return D(classification.wcRate);
+    if (wcConfig.defaultRate === undefined || wcConfig.defaultRate === null) return null;
+    return D(wcConfig.defaultRate);
+  }
+  function calculateWorkersComp(taxedRows, wcConfig) {
+    const twoThirds = D(2).div(3);
+    return taxedRows.map((row) => {
+      if (row.errors.length) return { ...row };
+      const wcRate = getWcRate(row.employeeName, wcConfig, row.classification);
+      if (wcRate === null) return { ...row, errors: [...row.errors, 'MISSING_WC_RATE'], status: 'Missing WC Rate' };
+      const otWcBase = row.otGross.times(twoThirds);
+      const wcBase = row.regularGross.plus(otWcBase);
+      const wcAmount = wcBase.times(wcRate);
+      return { ...row, wcRate, otWcBase, wcBase, wcAmount };
+    });
+  }
+
+  function calculateInvoice(finalRows, payrollConfig) {
+    const withBill = finalRows.map((row) => { if (row.errors.length) return row; const employeeBill = row.totalGross.plus(row.employerTax).plus(row.wcAmount); return { ...row, employeeBill }; });
+    const billable = withBill.filter((r) => !r.errors.length && !r.isExcluded && r.clubhouseRatio.gt(0));
+    const clubhouseSubtotal = billable.reduce((sum, r) => sum.plus(r.employeeBill), D(0));
+    const serviceChargeRate = D(payrollConfig.serviceChargeRate !== undefined ? payrollConfig.serviceChargeRate : 0.1);
+    const serviceCharge = clubhouseSubtotal.times(serviceChargeRate);
+    const finalAmount = clubhouseSubtotal.plus(serviceCharge);
+    const hasBlockingErrors = withBill.some((r) => r.errors.length > 0);
+    return { employees: withBill, clubhouseSubtotal, serviceChargeRate, serviceCharge, finalAmount, hasBlockingErrors };
+  }
+
+  // Required settings that must come from payroll_config.json — never a
+  // silent code default. Missing any of these blocks generation with a
+  // clear validation message instead of guessing.
+  function validatePayrollConfig(config) {
+    const errs = [];
+    if (config.dailyRegularLimit === undefined || config.dailyRegularLimit === null) errs.push({ type: 'MISSING_CONFIG', message: 'payroll_config.json is missing "dailyRegularLimit" (the daily regular-hours threshold).' });
+    if (config.overtimeMultiplier === undefined || config.overtimeMultiplier === null) errs.push({ type: 'MISSING_CONFIG', message: 'payroll_config.json is missing "overtimeMultiplier" (the OT rate multiplier).' });
+    if (config.serviceChargeRate === undefined || config.serviceChargeRate === null) errs.push({ type: 'MISSING_CONFIG', message: 'payroll_config.json is missing "serviceChargeRate".' });
+    if (config.maxWeeklyPeriodDays === undefined || config.maxWeeklyPeriodDays === null) errs.push({ type: 'MISSING_CONFIG', message: 'payroll_config.json is missing "maxWeeklyPeriodDays" (used to validate the upload is a single weekly period).' });
+    return errs;
+  }
+
+  function runPipeline(csvRows, hourlyRatesConfig, payrollConfig) {
+    const validationErrors = [];
+    validatePayrollConfig(payrollConfig).forEach((e) => validationErrors.push(e));
+
+    const { records: rawRecords, errors: parseErrors } = parseTimesheet(csvRows);
+    const { records, duplicates } = detectDuplicateRows(rawRecords);
+    parseErrors.forEach((e) => validationErrors.push({ type: e.type, message: e.message }));
+    duplicates.forEach((d) => validationErrors.push({ type: 'DUPLICATE_ROW', message: `Row ${d.line} (${d.employeeName}, ${d.localDate}) is an exact duplicate of row ${d.firstLine} — same employee, date, times, job codes and hours.` }));
+
+    const { employees, weekStart, weekEnd } = normalizeEmployees(records);
+
+    if (weekStart && weekEnd && payrollConfig.maxWeeklyPeriodDays) {
+      const spanDays = Math.round((new Date(weekEnd) - new Date(weekStart)) / 86400000) + 1;
+      if (spanDays > payrollConfig.maxWeeklyPeriodDays) {
+        validationErrors.push({ type: 'MULTI_WEEK_PERIOD', message: `Timesheet contains more than one weekly period: dates span ${spanDays} days (${weekStart} to ${weekEnd}), but the configured limit is ${payrollConfig.maxWeeklyPeriodDays} days.` });
+      }
+    }
+
+    const { daily, unmappedRows, ambiguousRows } = calculateDailyHours(records, payrollConfig);
+    unmappedRows.forEach((r) => validationErrors.push({ type: 'UNMAPPED_JOB_CODE', message: `Row ${r.line} (${r.employee}, ${r.date}): job codes "${[r.jobcode1, r.jobcode2, r.jobcode3].filter(Boolean).join(' / ')}" did not match any billing entity.` }));
+    ambiguousRows.forEach((r) => validationErrors.push({ type: 'AMBIGUOUS_JOB_CODE', message: `Row ${r.line} (${r.employee}, ${r.date}): job codes "${[r.jobcode1, r.jobcode2, r.jobcode3].filter(Boolean).join(' / ')}" matched more than one billing entity (${r.matches.join(', ')}) — cannot allocate hours to a single entity.` }));
+
+    const weekly = calculateWeeklyHours(daily);
+    const ratios = calculateEntityRatios(weekly, payrollConfig);
+    const classifications = detectJobClassifications(records, payrollConfig);
+    let payroll = calculatePayroll(weekly, ratios, hourlyRatesConfig, payrollConfig, classifications);
+    payroll = calculateTax(payroll, payrollConfig.employerTax || {});
+    payroll = calculateWorkersComp(payroll, payrollConfig.workersComp || {});
+    const invoice = calculateInvoice(payroll, payrollConfig);
+
+    invoice.employees.forEach((row) => {
+      if (row.errors.includes('MISSING_HOURLY_RATE')) validationErrors.push({ type: 'MISSING_HOURLY_RATE', message: `Missing hourly rate for ${row.employeeName}` });
+      if (row.errors.includes('MISSING_TAX_RATE')) validationErrors.push({ type: 'MISSING_TAX_RATE', message: `Missing employer tax rate for ${row.employeeName}` });
+      if (row.errors.includes('MISSING_WC_RATE')) validationErrors.push({ type: 'MISSING_WC_RATE', message: `Missing workers' comp rate for ${row.employeeName}` });
+    });
+    return { weekStart, weekEnd, employees, records, daily, weekly, ratios, invoice, validationErrors, canGenerate: validationErrors.length === 0 };
+  }
+
+  return { parseTimesheet, detectDuplicateRows, normalizeEmployees, classifyJobCodes, detectJobClassifications, calculateDailyHours, calculateWeeklyHours, calculateEntityRatios, calculatePayroll, calculateTax, calculateWorkersComp, calculateInvoice, validatePayrollConfig, runPipeline, getEmployeeHourlyRate };
+})();
+
+/* =====================================================================
+   generateExcel — output formatting only, no calculation logic.
+   ===================================================================== */
+function generateExcelWorkbook(result, hourlyRatesConfig, payrollConfig) {
+  const HEADER_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2F5233' } };
+  const HEADER_FONT = { bold: true, color: { argb: 'FFFFFFFF' } };
+  const THIN_BORDER = { top: { style: 'thin', color: { argb: 'FFB0B0B0' } }, left: { style: 'thin', color: { argb: 'FFB0B0B0' } }, bottom: { style: 'thin', color: { argb: 'FFB0B0B0' } }, right: { style: 'thin', color: { argb: 'FFB0B0B0' } } };
+  const SUBTOTAL_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEBF7' } };
+  const SERVICE_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF2CC' } };
+  const FINAL_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6E0B4' } };
+  const numFmt2 = '0.00';
+  const currencyFmt = '$#,##0.00';
+  const num = (d) => (d && d.toNumber ? d.toNumber() : Number(d) || 0);
+
+  function styleHeaderRow(row) { row.eachCell((cell) => { cell.fill = HEADER_FILL; cell.font = HEADER_FONT; cell.alignment = { horizontal: 'center', vertical: 'middle' }; cell.border = THIN_BORDER; }); }
+  function borderRow(row) { row.eachCell((cell) => { cell.border = THIN_BORDER; }); }
+  function autoFitColumns(ws, minWidth, maxWidth) {
+    minWidth = minWidth || 10; maxWidth = maxWidth || 42;
+    ws.columns.forEach((col) => { let max = minWidth; col.eachCell({ includeEmpty: false }, (cell) => { const v = cell.value; const len = v === null || v === undefined ? 0 : String(v).length; if (len + 2 > max) max = len + 2; }); col.width = Math.min(max, maxWidth); });
+  }
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Clubhouse Payroll Ledger'; wb.created = new Date();
+  const inv = result.invoice;
+
+  // Summary
+  const summary = wb.addWorksheet('Summary');
+  summary.mergeCells('A1:B1');
+  summary.getCell('A1').value = `Clubhouse Payroll Billing — ${result.weekStart} to ${result.weekEnd}`;
+  summary.getCell('A1').font = { bold: true, size: 14 };
+  summary.addRow([]);
+  const totals = inv.employees.reduce((acc, e) => {
+    acc.paidHours += num(e.paidHours); acc.regularHours += num(e.regularHours); acc.otHours += num(e.otHours);
+    acc.clubhouseHours += num(e.clubhouseRegularHours || 0) + num(e.clubhouseOtHours || 0);
+    if (!e.errors.length) { acc.gross += num(e.totalGross || 0); acc.tax += num(e.employerTax || 0); acc.wc += num(e.wcAmount || 0); }
+    return acc;
+  }, { paidHours: 0, regularHours: 0, otHours: 0, clubhouseHours: 0, gross: 0, tax: 0, wc: 0 });
+  const summaryCards = [
+    ['Total Paid Hours', totals.paidHours, numFmt2], ['Regular Hours', totals.regularHours, numFmt2], ['OT Hours', totals.otHours, numFmt2],
+    ['Clubhouse Hours', totals.clubhouseHours, numFmt2], ['Payroll Gross', totals.gross, currencyFmt], ['Employer Tax', totals.tax, currencyFmt],
+    ['Workers Comp', totals.wc, currencyFmt], ['Clubhouse Subtotal', num(inv.clubhouseSubtotal), currencyFmt],
+    ['Service Charge (' + inv.serviceChargeRate.times(100).toString() + '%)', num(inv.serviceCharge), currencyFmt], ['Final Amount', num(inv.finalAmount), currencyFmt],
+  ];
+  const headerRow = summary.addRow(['Metric', 'Value']); styleHeaderRow(headerRow);
+  summaryCards.forEach(([label, value, fmt]) => {
+    const row = summary.addRow([label, value]); row.getCell(2).numFmt = fmt; borderRow(row);
+    if (label === 'Clubhouse Subtotal') row.eachCell((c) => (c.fill = SUBTOTAL_FILL));
+    if (label.startsWith('Service Charge')) row.eachCell((c) => (c.fill = SERVICE_FILL));
+    if (label === 'Final Amount') row.eachCell((c) => { c.fill = FINAL_FILL; c.font = { bold: true, size: 12 }; });
+  });
+  summary.views = [{ state: 'frozen', ySplit: 3 }]; autoFitColumns(summary);
+
+  // Data
+  const data = wb.addWorksheet('Data');
+  const dataHeader = data.addRow(['Employee', 'Date', 'Day', 'Start', 'End', 'Hours', 'Job Code 1', 'Job Code 2', 'Job Code 3', 'Location']);
+  styleHeaderRow(dataHeader);
+  result.records.slice().sort((a, b) => a.employeeName.localeCompare(b.employeeName) || a.localDate.localeCompare(b.localDate)).forEach((r) => {
+    const row = data.addRow([r.employeeName, r.localDate, r.localDay, r.startTime, r.endTime, r.hours, r.jobcode1, r.jobcode2, r.jobcode3, r.location]);
+    row.getCell(6).numFmt = numFmt2; borderRow(row);
+  });
+  data.views = [{ state: 'frozen', ySplit: 1 }]; autoFitColumns(data);
+
+  // NewClubhouse
+  // Per the team's actual SOP: which employees appear as a row here is
+  // decided by clubhouseTeamRoster (a maintained name list — data, not
+  // logic), NOT by each employee's computed Clubhouse ratio. A roster
+  // member with 0% Clubhouse hours that week still gets a $0 row (for
+  // audit continuity, exactly like the reference output); anyone not on
+  // the roster is out of scope for this report even if a job code happens
+  // to touch Clubhouse/BluntD/Crysp. Among roster members:
+  //   - Shown normally: billed from the Clubhouse subtotal per their
+  //     computed ratio (which may correctly be $0).
+  //   - Omitted (with a footnote instead of a row): on clubhouseExclusions
+  //     — calculated in a separate payroll process, purely a manual
+  //     name-based list, independent of any job-code classification.
+  // If clubhouseTeamRoster is left empty, the app falls back to automatic
+  // detection (billable Clubhouse ratio, a matching job classification, or
+  // a manual exclusion) so it still produces something useful without a
+  // maintained roster.
+  const nc = wb.addWorksheet('NewClubhouse');
+  nc.getCell('A1').value = 'Clubhouse Billing Ratio & Payroll'; nc.getCell('A1').font = { bold: true, size: 12 };
+  nc.addRow([]);
+
+  const roster = (payrollConfig.clubhouseTeamRoster || []).map((n) => n.trim().toLowerCase());
+  const rosterSet = new Set(roster);
+  const reportRows = inv.employees.filter((e) => {
+    if (e.errors.length) return false;
+    const nameLower = e.employeeName.trim().toLowerCase();
+    if (rosterSet.size) return rosterSet.has(nameLower) && !e.isExcluded;
+    // No roster configured — fall back to automatic detection.
+    const billable = !e.isExcluded && e.clubhouseRatio.gt(0);
+    return billable || !!e.classification;
+  }).sort((a, b) => {
+    const ra = rosterSet.size ? roster.indexOf(a.employeeName.trim().toLowerCase()) : 999;
+    const rb = rosterSet.size ? roster.indexOf(b.employeeName.trim().toLowerCase()) : 999;
+    return ra - rb || a.employeeName.localeCompare(b.employeeName);
+  });
+
+  const ratioHeader = nc.addRow(['Employee', 'Clubhouse Hrs', 'BluntD Hrs', 'Crysp Hrs', 'Total Entity Hrs', 'Clubhouse Ratio']);
+  styleHeaderRow(ratioHeader);
+  reportRows.forEach((e) => {
+    const eh = e.entityHours || {};
+    const entityNames = Object.keys(payrollConfig.entityKeywords || {});
+    const total = entityNames.reduce((s, k) => s + num(eh[k] || 0), 0);
+    const row = nc.addRow([e.employeeName, num(eh['Clubhouse'] || 0), num(eh['BluntD'] || 0), num(eh['Crysp'] || 0), total, num(e.clubhouseRatio)]);
+    [2, 3, 4, 5].forEach((c) => (row.getCell(c).numFmt = numFmt2)); row.getCell(6).numFmt = '0.00'; borderRow(row);
+    if (e.isExcluded) row.eachCell((c) => (c.font = { italic: true, color: { argb: 'FF999999' } }));
+  });
+  nc.addRow([]);
+  const billHeader = nc.addRow(['Employee', 'Regular Hrs', 'OT Hrs', 'Clubhouse Reg Hrs', 'Clubhouse OT Hrs', 'Regular Rate', 'OT Rate', 'Regular Gross', 'OT Gross', 'Total Gross', 'Employer Tax Rate %', 'Employer Tax', 'WC Rate', 'WC Amount', 'Employee Bill', 'Status']);
+  styleHeaderRow(billHeader);
+  reportRows.forEach((e) => {
+    const status = e.errors.length ? e.status : (e.isExcluded && e.classification) ? `${e.classification.keyword} (excluded)` : e.isExcluded ? 'Excluded' : e.clubhouseRatio.gt(0) ? 'Billable' : 'Not Clubhouse';
+    const row = nc.addRow([e.employeeName, num(e.regularHours), num(e.otHours), e.errors.length ? '' : num(e.clubhouseRegularHours), e.errors.length ? '' : num(e.clubhouseOtHours), e.errors.length ? '' : num(e.regularRate), e.errors.length ? '' : num(e.otRate), e.errors.length ? '' : num(e.regularGross), e.errors.length ? '' : num(e.otGross), e.errors.length ? '' : num(e.totalGross), e.errors.length ? '' : num(e.employerTaxRatePercent), e.errors.length ? '' : num(e.employerTax), e.errors.length ? '' : num(e.wcRate), e.errors.length ? '' : num(e.wcAmount), e.errors.length ? '' : num(e.employeeBill), status]);
+    [2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 15].forEach((c) => (row.getCell(c).numFmt = numFmt2));
+    [8, 9, 10, 12, 14, 15].forEach((c) => (row.getCell(c).numFmt = currencyFmt));
+    row.getCell(13).numFmt = '0.0000'; borderRow(row);
+  });
+  // Totals always sum ALL employees (not just reportRows), so the dollar
+  // amount is correct even if the roster is stale or someone is missing
+  // from it — the roster only controls which rows are *listed* above.
+  const sumField = (field) => inv.employees.reduce((s, e) => (e.errors.length ? s : s + num(e[field])), 0);
+  const totalRow = nc.addRow(['Total', '', '', '', '', '', '', sumField('regularGross'), sumField('otGross'), sumField('totalGross'), '', sumField('employerTax'), '', sumField('wcAmount'), num(inv.clubhouseSubtotal), '']);
+  totalRow.eachCell((c) => { c.font = { bold: true }; c.fill = SUBTOTAL_FILL; c.border = THIN_BORDER; });
+  [8, 9, 10, 12, 14, 15].forEach((c) => (totalRow.getCell(c).numFmt = currencyFmt));
+  const scRow = nc.addRow(['Service Charge (' + inv.serviceChargeRate.times(100).toString() + '%)']);
+  scRow.getCell(15).value = num(inv.serviceCharge); scRow.getCell(15).numFmt = currencyFmt;
+  scRow.eachCell((c) => { c.fill = SERVICE_FILL; c.border = THIN_BORDER; });
+  const finalRow = nc.addRow(['Final Amount']);
+  finalRow.getCell(15).value = num(inv.finalAmount); finalRow.getCell(15).numFmt = currencyFmt;
+  finalRow.eachCell((c) => { c.fill = FINAL_FILL; c.font = { bold: true, size: 12 }; c.border = THIN_BORDER; });
+  const classifiedExcluded = inv.employees.filter((e) => !e.errors.length && e.classification && e.classification.excludeFromClubhouse).map((e) => `${e.employeeName} (${e.classification.keyword})`);
+  const manuallyExcludedOnRoster = inv.employees.filter((e) => !e.errors.length && rosterSet.has(e.employeeName.trim().toLowerCase()) && e.isExcluded).map((e) => e.employeeName);
+  const notOnRoster = rosterSet.size ? inv.employees.filter((e) => !e.errors.length && !rosterSet.has(e.employeeName.trim().toLowerCase())).map((e) => e.employeeName) : [];
+  const omittedNoRosterMode = rosterSet.size ? [] : inv.employees.filter((e) => !e.errors.length && !reportRows.includes(e)).map((e) => e.employeeName);
+  nc.addRow([]);
+  if (classifiedExcluded.length) nc.addRow([`** Excluded from Clubhouse billing by job-code classification (payroll_config.json jobClassifications, excludeFromClubhouse: true) — shown here for audit only: ${classifiedExcluded.join(', ')}`]);
+  if (manuallyExcludedOnRoster.length) nc.addRow([`** On the Clubhouse team roster but calculated in a separate payroll process (payroll_config.json clubhouseExclusions) — not billed here: ${manuallyExcludedOnRoster.join(', ')}`]);
+  if (notOnRoster.length) nc.addRow([`** Not on the Clubhouse team roster (payroll_config.json clubhouseTeamRoster) — out of scope for this report; see Data / Daily OT Audit for their full hours: ${notOnRoster.join(', ')}`]);
+  if (omittedNoRosterMode.length) nc.addRow([`** Not shown above (no Clubhouse work, no matching job classification) — see Data / Daily OT Audit for their full hours: ${omittedNoRosterMode.join(', ')}`]);
+  nc.views = [{ state: 'frozen', ySplit: 3 }]; autoFitColumns(nc);
+
+  // Hourly Rates
+  const hr = wb.addWorksheet('Hourly Rates');
+  const hrHeader = hr.addRow(['Full Name', 'Hourly Rate', 'Notes']); styleHeaderRow(hrHeader);
+  (hourlyRatesConfig.employees || []).slice().sort((a, b) => a.name.localeCompare(b.name)).forEach((e) => {
+    const row = hr.addRow([e.name, e.hourlyRate, e.notes || '']); row.getCell(2).numFmt = currencyFmt; borderRow(row);
+  });
+  hr.views = [{ state: 'frozen', ySplit: 1 }]; autoFitColumns(hr);
+
+  // Rate Calculation
+  const rc = wb.addWorksheet('Rate Calculation');
+  rc.getCell('A1').value = `Employer Tax & Workers Comp Configuration — ${result.weekStart} to ${result.weekEnd}`; rc.getCell('A1').font = { bold: true, size: 12 };
+  rc.addRow([]);
+  const rcHeader = rc.addRow(['Employee', 'Employer Tax Rate %', 'Source', 'WC Rate', 'Source']); styleHeaderRow(rcHeader);
+  inv.employees.forEach((e) => {
+    if (e.errors.length) return;
+    const taxOverrides = (payrollConfig.employerTax || {}).overrides || {};
+    const wcOverrides = (payrollConfig.workersComp || {}).overrides || {};
+    const taxSrc = Object.keys(taxOverrides).some((k) => k.toLowerCase() === e.employeeName.toLowerCase()) ? 'Employee override' : 'Default';
+    const wcSrc = Object.keys(wcOverrides).some((k) => k.toLowerCase() === e.employeeName.toLowerCase()) ? 'Employee override' : e.classification ? `"${e.classification.keyword}" classification (from job code)` : 'Default';
+    const row = rc.addRow([e.employeeName, num(e.employerTaxRatePercent), taxSrc, num(e.wcRate), wcSrc]);
+    row.getCell(2).numFmt = '0.0000'; row.getCell(4).numFmt = '0.0000'; borderRow(row);
+  });
+  rc.views = [{ state: 'frozen', ySplit: 3 }]; autoFitColumns(rc);
+
+  // Daily OT Audit
+  const audit = wb.addWorksheet('Daily OT Audit');
+  const auditHeader = audit.addRow(['Employee', 'Date', 'Day', 'Work Hrs', 'Rest Hrs', 'Lunch Hrs', 'Paid Hrs', 'Regular Hrs', 'OT Hrs']); styleHeaderRow(auditHeader);
+  result.daily.forEach((d) => {
+    const row = audit.addRow([d.employeeName, d.localDate, d.localDay, num(d.workHours), num(d.restHours), num(d.lunchHours), num(d.paidHours), num(d.regularHours), num(d.otHours)]);
+    [4, 5, 6, 7, 8, 9].forEach((c) => (row.getCell(c).numFmt = numFmt2)); borderRow(row);
+  });
+  audit.views = [{ state: 'frozen', ySplit: 1 }]; autoFitColumns(audit);
+
+  return wb;
+}
+
+/* =====================================================================
+   UI
+   ===================================================================== */
+const $ = (id) => document.getElementById(id);
+const fmtMoney = (n) => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtHours = (n) => Number(n).toFixed(2);
+
+function renderValidation(result) {
+  const slot = $('validationSlot');
+  if (!result) { slot.innerHTML = ''; return; }
+  if (result.canGenerate) {
+    slot.innerHTML = `<div class="banner ok"><div><div class="title">Ready</div>All rows validated — hourly rates, tax and workers' comp configuration are complete for every employee found.</div></div>`;
+  } else {
+    const items = result.validationErrors.map((e) => `<li>${e.message}</li>`).join('');
+    slot.innerHTML = `<div class="banner err"><div><div class="title">Cannot generate — ${result.validationErrors.length} issue(s) found</div><ul>${items}</ul></div></div>`;
+  }
+}
+
+function renderSummary(result) {
+  const inv = result.invoice;
+  const totals = inv.employees.reduce((acc, e) => {
+    acc.paidHours += Number(e.paidHours); acc.regularHours += Number(e.regularHours); acc.otHours += Number(e.otHours);
+    acc.clubhouseHours += Number(e.clubhouseRegularHours || 0) + Number(e.clubhouseOtHours || 0);
+    if (!e.errors.length) { acc.tax += Number(e.employerTax || 0); acc.wc += Number(e.wcAmount || 0); }
+    return acc;
+  }, { paidHours: 0, regularHours: 0, otHours: 0, clubhouseHours: 0, tax: 0, wc: 0 });
+
+  const tiles = [
+    ['Total Paid Hours', fmtHours(totals.paidHours)],
+    ['Regular Hours', fmtHours(totals.regularHours)],
+    ['OT Hours', fmtHours(totals.otHours)],
+    ['Clubhouse Hours', fmtHours(totals.clubhouseHours)],
+    ['Payroll Gross', fmtMoney(inv.clubhouseSubtotal.minus(totals.tax).minus(totals.wc))],
+    ['Employer Tax', fmtMoney(totals.tax)],
+    ['Workers Comp', fmtMoney(totals.wc)],
+    ['Service Charge', fmtMoney(inv.serviceCharge)],
+  ];
+  let html = tiles.map(([k, v]) => `<div class="stat-tile"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+  html += `<div class="stat-tile final"><div class="k">Final Amount</div><div class="v">${fmtMoney(inv.finalAmount)}</div></div>`;
+  $('statGrid').innerHTML = html;
+  $('summaryCard').hidden = false;
+}
+
+function renderEmployeeTable(result) {
+  const rows = result.invoice.employees.map((e) => {
+    const clubhouseHours = e.errors.length ? 0 : e.clubhouseRegularHours.plus(e.clubhouseOtHours);
+    let statusPill;
+    if (e.errors.length) statusPill = `<span class="pill warn">${e.status}</span>`;
+    else if (e.isExcluded && e.classification) statusPill = `<span class="pill muted">${e.classification.keyword} (excluded)</span>`;
+    else if (e.isExcluded) statusPill = `<span class="pill muted">Excluded</span>`;
+    else if (e.clubhouseRatio.gt(0)) statusPill = `<span class="pill ok">Billable</span>`;
+    else statusPill = `<span class="pill muted">Not Clubhouse</span>`;
+
+    const cell = (v, money) => (e.errors.length ? '—' : money ? fmtMoney(v) : fmtHours(v));
+    const cls = e.isExcluded ? ' class="excluded"' : '';
+    return `<tr${cls}>
+      <td>${e.employeeName}</td>
+      <td class="num">${fmtHours(e.workHours)}</td>
+      <td class="num">${fmtHours(e.restHours)}</td>
+      <td class="num">${fmtHours(e.lunchHours)}</td>
+      <td class="num">${fmtHours(e.paidHours)}</td>
+      <td class="num">${fmtHours(e.regularHours)}</td>
+      <td class="num">${fmtHours(e.otHours)}</td>
+      <td class="num">${e.errors.length ? '—' : fmtHours(clubhouseHours)}</td>
+      <td class="num">${e.errors.length ? '—' : e.clubhouseRatio.toString()}</td>
+      <td class="num">${e.hourlyRate === null ? '—' : fmtMoney(e.hourlyRate)}</td>
+      <td class="num">${e.errors.length ? '—' : fmtMoney(e.otRate)}</td>
+      <td class="num">${cell(e.regularGross, true)}</td>
+      <td class="num">${cell(e.otGross, true)}</td>
+      <td class="num">${cell(e.totalGross, true)}</td>
+      <td class="num">${cell(e.employerTax, true)}</td>
+      <td class="num">${cell(e.wcAmount, true)}</td>
+      <td class="num">${cell(e.employeeBill, true)}</td>
+      <td>${statusPill}</td>
+    </tr>`;
+  }).join('');
+  $('employeeBody').innerHTML = rows;
+  $('employeeCard').hidden = false;
+}
+
+function processFile(rows, filename) {
+  if (!CONFIG) return; // Configuration Missing — blocked in init()
+  const result = Engine.runPipeline(rows, CONFIG.hourlyRates, CONFIG.payrollConfig);
+  CURRENT_RESULT = result;
+  CURRENT_FILENAME = filename;
+  renderValidation(result);
+  renderSummary(result);
+  renderEmployeeTable(result);
+  $('downloadBtn').disabled = !result.canGenerate;
+  $('weekChip').textContent = result.weekStart && result.weekEnd ? `Week: ${result.weekStart} → ${result.weekEnd}` : 'Week not detected';
+}
+
+let PARSED_ROWS = null;
+
+function handleFile(file) {
+  if (!file || !CONFIG) return; // Configuration Missing — blocked in init()
+  $('metaFile').textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const parsed = Papa.parse(e.target.result, { header: true, skipEmptyLines: true });
+    PARSED_ROWS = parsed.data;
+    const { employees, weekStart, weekEnd } = Engine.normalizeEmployees(Engine.parseTimesheet(parsed.data).records);
+    $('metaWeek').textContent = weekStart && weekEnd ? `${weekStart} → ${weekEnd}` : '—';
+    $('metaEmployees').textContent = employees.length;
+    $('uploadMeta').hidden = false;
+    $('processBtn').disabled = false;
+    $('dropLabel').textContent = 'File loaded — choose again to replace';
+  };
+  reader.readAsText(file);
+}
+
+/* Saves a file to disk. Inside the Claude Artifact viewer this goes through
+   the sandboxed `downloads` capability; opened as a plain local HTML file
+   (no window.claude) it falls back to a normal browser download. */
+async function saveFile(filename, blob) {
+  if (window.claude && typeof window.claude.use === 'function') {
+    const downloads = await window.claude.use('downloads');
+    if (downloads) { await downloads.save({ filename, data: blob }); return; }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+$('fileInput').addEventListener('change', (e) => handleFile(e.target.files[0]));
+$('dropzone').addEventListener('dragover', (e) => { e.preventDefault(); $('dropzone').classList.add('drag'); });
+$('dropzone').addEventListener('dragleave', () => $('dropzone').classList.remove('drag'));
+$('dropzone').addEventListener('drop', (e) => { e.preventDefault(); $('dropzone').classList.remove('drag'); const f = e.dataTransfer.files[0]; if (f) { $('fileInput').files = e.dataTransfer.files; handleFile(f); } });
+
+$('processBtn').addEventListener('click', () => { if (PARSED_ROWS) processFile(PARSED_ROWS, $('metaFile').textContent); });
+
+$('downloadBtn').addEventListener('click', async () => {
+  if (!CURRENT_RESULT || !CURRENT_RESULT.canGenerate) return;
+  const btn = $('downloadBtn');
+  const original = btn.textContent;
+  btn.textContent = 'Building workbook…';
+  btn.disabled = true;
+  try {
+    const wb = generateExcelWorkbook(CURRENT_RESULT, CONFIG.hourlyRates, CONFIG.payrollConfig);
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const weekLabel = (CURRENT_RESULT.weekStart || 'week') + '_thru_' + (CURRENT_RESULT.weekEnd || '');
+    const filename = `Clubhouse_Payroll_${weekLabel}.xlsx`;
+    await saveFile(filename, blob);
+  } catch (err) {
+    if (err && err.code === 'declined') {
+      /* user declined, no error to show */
+    } else {
+      alert('Could not save the file: ' + (err && err.message ? err.message : 'unknown error'));
+    }
+  } finally {
+    btn.textContent = original;
+    btn.disabled = !CURRENT_RESULT.canGenerate;
+  }
+});
+
+/* ---------------- Configuration panel ---------------- */
+function renderRatesTable() {
+  const body = $('ratesBody');
+  body.innerHTML = CONFIG.hourlyRates.employees.map((emp, i) => `
+    <tr>
+      <td><input type="text" data-idx="${i}" data-field="name" value="${emp.name.replace(/"/g, '&quot;')}"></td>
+      <td><input type="number" step="0.01" data-idx="${i}" data-field="hourlyRate" value="${emp.hourlyRate}"></td>
+      <td><input type="text" data-idx="${i}" data-field="notes" value="${(emp.notes || '').replace(/"/g, '&quot;')}"></td>
+      <td><button class="danger small" data-remove="${i}">Remove</button></td>
+    </tr>`).join('');
+  body.querySelectorAll('input').forEach((inp) => inp.addEventListener('change', (e) => {
+    const idx = Number(e.target.dataset.idx); const field = e.target.dataset.field;
+    CONFIG.hourlyRates.employees[idx][field] = field === 'hourlyRate' ? Number(e.target.value) : e.target.value;
+  }));
+  body.querySelectorAll('[data-remove]').forEach((b) => b.addEventListener('click', () => {
+    CONFIG.hourlyRates.employees.splice(Number(b.dataset.remove), 1); renderRatesTable();
+  }));
+}
+
+function renderRosterTags() {
+  $('rosterTags').innerHTML = (CONFIG.payrollConfig.clubhouseTeamRoster || []).map((name, i) =>
+    `<span class="tag">${name}<button data-idx="${i}">&times;</button></span>`).join('')
+    || '<span style="color:var(--text-muted); font-size:0.82rem;">Empty — falls back to automatic (anyone with a Clubhouse ratio &gt; 0).</span>';
+  $('rosterTags').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+    CONFIG.payrollConfig.clubhouseTeamRoster.splice(Number(b.dataset.idx), 1); renderRosterTags();
+  }));
+}
+
+function renderExclusionTags() {
+  $('exclusionTags').innerHTML = (CONFIG.payrollConfig.clubhouseExclusions || []).map((name, i) =>
+    `<span class="tag">${name}<button data-idx="${i}">&times;</button></span>`).join('');
+  $('exclusionTags').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+    CONFIG.payrollConfig.clubhouseExclusions.splice(Number(b.dataset.idx), 1); renderExclusionTags();
+  }));
+}
+
+function renderOverrideTable(bodyId, overrides, valueField, step) {
+  const body = $(bodyId);
+  const keys = Object.keys(overrides);
+  body.innerHTML = keys.map((name) => `
+    <tr>
+      <td><input type="text" data-key="${name}" data-role="name" value="${name.replace(/"/g, '&quot;')}"></td>
+      <td><input type="number" step="${step}" data-key="${name}" data-role="value" value="${overrides[name]}"></td>
+      <td><button class="danger small" data-remove-key="${name}">Remove</button></td>
+    </tr>`).join('');
+  body.querySelectorAll('[data-role="value"]').forEach((inp) => inp.addEventListener('change', (e) => { overrides[e.target.dataset.key] = Number(e.target.value); }));
+  body.querySelectorAll('[data-role="name"]').forEach((inp) => inp.addEventListener('change', (e) => {
+    const oldKey = e.target.dataset.key; const newKey = e.target.value;
+    if (oldKey !== newKey) { overrides[newKey] = overrides[oldKey]; delete overrides[oldKey]; renderOverrideTable(bodyId, overrides, valueField, step); }
+  }));
+  body.querySelectorAll('[data-remove-key]').forEach((b) => b.addEventListener('click', () => { delete overrides[b.dataset.removeKey]; renderOverrideTable(bodyId, overrides, valueField, step); }));
+}
+
+function renderJobClassifications() {
+  const body = $('jobClassBody');
+  const classifications = CONFIG.payrollConfig.jobClassifications || {};
+  const keys = Object.keys(classifications);
+  body.innerHTML = keys.map((key) => {
+    const c = classifications[key] || {};
+    return `
+    <tr>
+      <td><input type="text" data-key="${key}" data-role="key" value="${key.replace(/"/g, '&quot;')}"></td>
+      <td><input type="number" step="0.0001" data-key="${key}" data-role="wcRate" value="${c.wcRate !== undefined && c.wcRate !== null ? c.wcRate : ''}"></td>
+      <td style="text-align:center;"><input type="checkbox" data-key="${key}" data-role="exclude" ${c.excludeFromClubhouse ? 'checked' : ''}></td>
+      <td><button class="danger small" data-remove-class="${key}">Remove</button></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="4" style="color:var(--text-muted); font-style:italic;">No classifications configured — no job code triggers a special WC rate or exclusion.</td></tr>';
+  body.querySelectorAll('[data-role="wcRate"]').forEach((inp) => inp.addEventListener('change', (e) => {
+    const key = e.target.dataset.key;
+    classifications[key] = classifications[key] || {};
+    classifications[key].wcRate = e.target.value === '' ? null : Number(e.target.value);
+  }));
+  body.querySelectorAll('[data-role="exclude"]').forEach((inp) => inp.addEventListener('change', (e) => {
+    const key = e.target.dataset.key;
+    classifications[key] = classifications[key] || {};
+    classifications[key].excludeFromClubhouse = e.target.checked;
+  }));
+  body.querySelectorAll('[data-role="key"]').forEach((inp) => inp.addEventListener('change', (e) => {
+    const oldKey = e.target.dataset.key; const newKey = e.target.value.trim();
+    if (newKey && oldKey !== newKey) { classifications[newKey] = classifications[oldKey]; delete classifications[oldKey]; renderJobClassifications(); }
+  }));
+  body.querySelectorAll('[data-remove-class]').forEach((b) => b.addEventListener('click', () => {
+    delete classifications[b.dataset.removeClass]; renderJobClassifications();
+  }));
+}
+
+function renderEntityKeywords() {
+  const grid = $('entityKeywordGrid');
+  grid.innerHTML = Object.keys(CONFIG.payrollConfig.entityKeywords).map((ent) => `
+    <label class="field">${ent} keywords (comma separated)
+      <input type="text" data-entity="${ent}" value="${CONFIG.payrollConfig.entityKeywords[ent].join(', ')}">
+    </label>`).join('');
+  grid.querySelectorAll('input').forEach((inp) => inp.addEventListener('change', (e) => {
+    CONFIG.payrollConfig.entityKeywords[e.target.dataset.entity] = e.target.value.split(',').map((s) => s.trim()).filter(Boolean);
+  }));
+}
+
+function renderConfigPanel() {
+  if (!CONFIG) return;
+  renderRatesTable();
+  renderRosterTags();
+  renderExclusionTags();
+  renderOverrideTable('taxOverrideBody', CONFIG.payrollConfig.employerTax.overrides, 'tax', '0.0001');
+  renderOverrideTable('wcOverrideBody', CONFIG.payrollConfig.workersComp.overrides, 'wc', '0.0001');
+  CONFIG.payrollConfig.jobClassifications = CONFIG.payrollConfig.jobClassifications || {};
+  renderJobClassifications();
+  renderEntityKeywords();
+  $('cfgTaxDefault').value = CONFIG.payrollConfig.employerTax.defaultRatePercent;
+  $('cfgWcDefault').value = CONFIG.payrollConfig.workersComp.defaultRate;
+  $('cfgServiceCharge').value = CONFIG.payrollConfig.serviceChargeRate * 100;
+  $('cfgDailyLimit').value = CONFIG.payrollConfig.dailyRegularLimit !== undefined ? CONFIG.payrollConfig.dailyRegularLimit : '';
+  $('cfgOtMultiplier').value = CONFIG.payrollConfig.overtimeMultiplier !== undefined ? CONFIG.payrollConfig.overtimeMultiplier : '';
+  $('cfgMaxWeekDays').value = CONFIG.payrollConfig.maxWeeklyPeriodDays !== undefined ? CONFIG.payrollConfig.maxWeeklyPeriodDays : '';
+}
+
+$('addRateRow').addEventListener('click', () => { CONFIG.hourlyRates.employees.push({ name: 'New Employee', hourlyRate: 0, notes: '' }); renderRatesTable(); });
+$('addJobClass').addEventListener('click', () => {
+  CONFIG.payrollConfig.jobClassifications = CONFIG.payrollConfig.jobClassifications || {};
+  let key = 'new-keyword'; let i = 1;
+  while (CONFIG.payrollConfig.jobClassifications[key] !== undefined) { key = `new-keyword-${i++}`; }
+  CONFIG.payrollConfig.jobClassifications[key] = { wcRate: null, excludeFromClubhouse: false };
+  renderJobClassifications();
+});
+$('addRoster').addEventListener('click', () => {
+  const val = $('newRoster').value.trim();
+  if (val) { CONFIG.payrollConfig.clubhouseTeamRoster = CONFIG.payrollConfig.clubhouseTeamRoster || []; CONFIG.payrollConfig.clubhouseTeamRoster.push(val); $('newRoster').value = ''; renderRosterTags(); }
+});
+$('addExclusion').addEventListener('click', () => {
+  const val = $('newExclusion').value.trim();
+  if (val) { CONFIG.payrollConfig.clubhouseExclusions = CONFIG.payrollConfig.clubhouseExclusions || []; CONFIG.payrollConfig.clubhouseExclusions.push(val); $('newExclusion').value = ''; renderExclusionTags(); }
+});
+$('addTaxOverride').addEventListener('click', () => { CONFIG.payrollConfig.employerTax.overrides['New Employee'] = CONFIG.payrollConfig.employerTax.defaultRatePercent; renderOverrideTable('taxOverrideBody', CONFIG.payrollConfig.employerTax.overrides, 'tax', '0.0001'); });
+$('addWcOverride').addEventListener('click', () => { CONFIG.payrollConfig.workersComp.overrides['New Employee'] = CONFIG.payrollConfig.workersComp.defaultRate; renderOverrideTable('wcOverrideBody', CONFIG.payrollConfig.workersComp.overrides, 'wc', '0.0001'); });
+
+$('exportRates').addEventListener('click', async () => {
+  const blob = new Blob([JSON.stringify(CONFIG.hourlyRates, null, 2)], { type: 'application/json' });
+  try { await saveFile('hourly_rates.json', blob); } catch (e) { /* declined or unavailable */ }
+});
+$('importRates').addEventListener('change', (e) => {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => { try { const parsed = JSON.parse(ev.target.result); if (parsed && parsed.employees) { CONFIG.hourlyRates = parsed; renderRatesTable(); } } catch (err) { alert('Invalid JSON file'); } };
+  reader.readAsText(file);
+});
+
+$('saveConfig').addEventListener('click', () => {
+  CONFIG.payrollConfig.employerTax.defaultRatePercent = Number($('cfgTaxDefault').value);
+  CONFIG.payrollConfig.workersComp.defaultRate = Number($('cfgWcDefault').value);
+  CONFIG.payrollConfig.serviceChargeRate = Number($('cfgServiceCharge').value) / 100;
+  CONFIG.payrollConfig.dailyRegularLimit = Number($('cfgDailyLimit').value);
+  CONFIG.payrollConfig.overtimeMultiplier = Number($('cfgOtMultiplier').value);
+  CONFIG.payrollConfig.maxWeeklyPeriodDays = Number($('cfgMaxWeekDays').value);
+  saveConfigToStorage(CONFIG);
+  if (PARSED_ROWS) processFile(PARSED_ROWS, $('metaFile').textContent);
+  const btn = $('saveConfig'); const orig = btn.textContent; btn.textContent = 'Saved ✓'; setTimeout(() => (btn.textContent = orig), 1200);
+});
+$('resetConfig').addEventListener('click', async () => {
+  try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* ignore */ }
+  const fresh = await loadConfigFromFilesOrCache();
+  if (!fresh) { showConfigMissing(); return; }
+  CONFIG = fresh;
+  CONFIG_MISSING = false;
+  $('configMissingSlot').innerHTML = '';
+  setUploadEnabled(true);
+  renderConfigPanel();
+  if (PARSED_ROWS) processFile(PARSED_ROWS, $('metaFile').textContent);
+});
+
+function setUploadEnabled(enabled) {
+  $('fileInput').disabled = !enabled;
+  $('dropzone').style.pointerEvents = enabled ? '' : 'none';
+  $('dropzone').style.opacity = enabled ? '' : '0.5';
+  $('processBtn').disabled = !enabled || !PARSED_ROWS;
+}
+
+function showConfigMissing() {
+  CONFIG_MISSING = true;
+  $('configMissingSlot').innerHTML = `<div class="banner err"><div><div class="title">Configuration Missing</div>
+    Could not load <code>hourly_rates.json</code> and/or <code>payroll_config.json</code> from this page's
+    folder, and no previously-saved configuration was found in this browser. Add both files next to
+    <code>index.html</code> (e.g. commit them to the same GitHub Pages folder) and reload this page.
+    Upload and processing are disabled until configuration loads successfully.</div></div>`;
+  setUploadEnabled(false);
+}
+
+(async function init() {
+  CONFIG = await loadConfigFromFilesOrCache();
+  if (!CONFIG) { showConfigMissing(); return; }
+  renderConfigPanel();
+})();
+</script>
