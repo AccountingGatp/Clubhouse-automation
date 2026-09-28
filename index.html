@@ -1043,24 +1043,47 @@ function generateExcelWorkbook(result, hourlyRatesConfig, payrollConfig) {
     if (e.isExcluded) row.eachCell((c) => (c.font = { italic: true, color: { argb: 'FF999999' } }));
   });
   nc.addRow([]);
-  const billHeader = nc.addRow(['Employee', 'Regular Hrs', 'OT Hrs', 'Clubhouse Reg Hrs', 'Clubhouse OT Hrs', 'Regular Rate', 'OT Rate', 'Regular Gross', 'OT Gross', 'Total Gross', 'Employer Tax Rate %', 'Employer Tax', 'WC Rate', 'WC Amount', 'Employee Bill', 'Status']);
+  // Column names/order for the first 14 columns match your actual reference
+  // "NewClubhouse" workbook exactly (fullname, Regular hr, OT hr, Regular
+  // Rate, OT rate, Gross (Regular), Gross (OT), Total Gross Payment,
+  // Employer Tax rate, Tax Amount, WC Rate, 2/3 exempt OT, WC Amount, Total
+  // Bill to LXP) — "Regular hr"/"OT hr" there are already the
+  // Clubhouse-ratio-adjusted hours, not the raw weekly payroll hours.
+  // Raw weekly Regular/OT/Double hours (as copied from the uploaded weekly
+  // payroll sheet, before the Clubhouse ratio is applied) and Status are
+  // appended as extra columns after — for audit only, not part of the
+  // matched structure.
+  const billHeader = nc.addRow(['fullname', 'Regular hr', 'OT hr', 'Regular Rate', 'OT rate', 'Gross (Regular)', 'Gross (OT)', 'Total Gross Payment', 'Employer Tax rate', 'Tax Amount', 'WC Rate', '2/3 exempt OT', 'WC Amount', 'Total Bill to LXP', 'Raw Weekly Regular Hrs', 'Raw Weekly OT Hrs', 'Raw Weekly Double Hrs', 'Status']);
   styleHeaderRow(billHeader);
   reportRows.forEach((e) => {
     const status = e.errors.length ? e.status : (e.isExcluded && e.classification) ? `${e.classification.keyword} (excluded)` : e.isExcluded ? 'Excluded' : e.clubhouseRatio.gt(0) ? 'Billable' : 'Not Clubhouse';
-    const row = nc.addRow([e.employeeName, num(e.regularHours), num(e.otHours), e.errors.length ? '' : num(e.clubhouseRegularHours), e.errors.length ? '' : num(e.clubhouseOtHours), e.errors.length ? '' : num(e.regularRate), e.errors.length ? '' : num(e.otRate), e.errors.length ? '' : num(e.regularGross), e.errors.length ? '' : num(e.otGross), e.errors.length ? '' : num(e.totalGross), e.errors.length ? '' : num(e.employerTaxRatePercent), e.errors.length ? '' : num(e.employerTax), e.errors.length ? '' : num(e.wcRate), e.errors.length ? '' : num(e.wcAmount), e.errors.length ? '' : num(e.employeeBill), status]);
-    [2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 15].forEach((c) => (row.getCell(c).numFmt = numFmt2));
-    [8, 9, 10, 12, 14, 15].forEach((c) => (row.getCell(c).numFmt = currencyFmt));
-    row.getCell(13).numFmt = '0.0000'; borderRow(row);
+    const row = nc.addRow([
+      e.employeeName,
+      e.errors.length ? '' : num(e.clubhouseRegularHours), e.errors.length ? '' : num(e.clubhouseOtHours),
+      e.errors.length ? '' : num(e.regularRate), e.errors.length ? '' : num(e.otRate),
+      e.errors.length ? '' : num(e.regularGross), e.errors.length ? '' : num(e.otGross),
+      e.errors.length ? '' : num(e.totalGross),
+      e.errors.length ? '' : num(e.employerTaxRatePercent), e.errors.length ? '' : num(e.employerTax),
+      e.errors.length ? '' : num(e.wcRate), e.errors.length ? '' : num(e.otWcBase), e.errors.length ? '' : num(e.wcAmount),
+      e.errors.length ? '' : num(e.employeeBill),
+      num(e.regularHours), num(e.otHours), num(e.doubleHours || 0),
+      status,
+    ]);
+    [2, 3, 4, 5, 6, 7, 8, 10, 15, 16, 17].forEach((c) => (row.getCell(c).numFmt = numFmt2));
+    [6, 7, 8, 10, 13, 14].forEach((c) => (row.getCell(c).numFmt = currencyFmt));
+    row.getCell(11).numFmt = '0.0000'; borderRow(row);
   });
   const sumField = (field) => inv.employees.reduce((s, e) => (e.errors.length ? s : s + num(e[field])), 0);
-  const totalRow = nc.addRow(['Total', '', '', '', '', '', '', sumField('regularGross'), sumField('otGross'), sumField('totalGross'), '', sumField('employerTax'), '', sumField('wcAmount'), num(inv.clubhouseSubtotal), '']);
+  const totalRow = nc.addRow(['Total', '', '', '', '', '', '', sumField('totalGross'), '', sumField('employerTax'), '', '', sumField('wcAmount'), num(inv.clubhouseSubtotal), '', '', '', '']);
   totalRow.eachCell((c) => { c.font = { bold: true }; c.fill = SUBTOTAL_FILL; c.border = THIN_BORDER; });
-  [8, 9, 10, 12, 14, 15].forEach((c) => (totalRow.getCell(c).numFmt = currencyFmt));
-  const scRow = nc.addRow(['Service Charge (' + inv.serviceChargeRate.times(100).toString() + '%)']);
-  scRow.getCell(15).value = num(inv.serviceCharge); scRow.getCell(15).numFmt = currencyFmt;
+  [8, 10, 13, 14].forEach((c) => (totalRow.getCell(c).numFmt = currencyFmt));
+  const scRow = nc.addRow([]);
+  scRow.getCell(1).value = 'Service Charge (' + inv.serviceChargeRate.times(100).toString() + '%)';
+  scRow.getCell(14).value = num(inv.serviceCharge); scRow.getCell(14).numFmt = currencyFmt;
   scRow.eachCell((c) => { c.fill = SERVICE_FILL; c.border = THIN_BORDER; });
-  const finalRow = nc.addRow(['Final Amount']);
-  finalRow.getCell(15).value = num(inv.finalAmount); finalRow.getCell(15).numFmt = currencyFmt;
+  const finalRow = nc.addRow([]);
+  finalRow.getCell(1).value = 'Final Amount';
+  finalRow.getCell(14).value = num(inv.finalAmount); finalRow.getCell(14).numFmt = currencyFmt;
   finalRow.eachCell((c) => { c.fill = FINAL_FILL; c.font = { bold: true, size: 12 }; c.border = THIN_BORDER; });
   const classifiedExcluded = inv.employees.filter((e) => !e.errors.length && e.classification && e.classification.excludeFromClubhouse).map((e) => `${e.employeeName} (${e.classification.keyword})`);
   const excludedFromScope = inv.excludedFromScope || [];
@@ -1071,27 +1094,46 @@ function generateExcelWorkbook(result, hourlyRatesConfig, payrollConfig) {
 
   // Hourly Rates
   const hr = wb.addWorksheet('Hourly Rates');
-  const hrHeader = hr.addRow(['Full Name', 'Hourly Rate', 'Notes']); styleHeaderRow(hrHeader);
+  const hrHeader = hr.addRow(['Full Name', 'Pay Rate', 'Notes']); styleHeaderRow(hrHeader);
   (hourlyRatesConfig.employees || []).slice().sort((a, b) => a.name.localeCompare(b.name)).forEach((e) => {
     const row = hr.addRow([e.name, e.hourlyRate, e.notes || '']); row.getCell(2).numFmt = currencyFmt; borderRow(row);
   });
   hr.views = [{ state: 'frozen', ySplit: 1 }]; autoFitColumns(hr);
 
-  // Rate Calculation
+  // Rate Calculation — matches your actual reference workbook's layout
+  // exactly: a date-range header, then per billable employee, three
+  // stacked rows (Gross Pay / Employer tax / Tax Rate) rather than one
+  // row per employee. Employer tax is the employee's actual computed
+  // employer-tax dollar amount; Tax Rate is that amount as a % of Gross
+  // Pay (tax ÷ gross × 100) — the same relationship the reference
+  // workbook itself uses, just computed forward here from the configured
+  // rate instead of backward from two manually-typed sub-totals.
   const rc = wb.addWorksheet('Rate Calculation');
-  rc.getCell('A1').value = `Employer Tax & Workers Comp Configuration — ${result.weekStart} to ${result.weekEnd}`; rc.getCell('A1').font = { bold: true, size: 12 };
-  rc.addRow([]);
-  const rcHeader = rc.addRow(['Employee', 'Employer Tax Rate %', 'Source', 'WC Rate', 'Source']); styleHeaderRow(rcHeader);
+  const rcMoneyFmt = '_("$"* #,##0.00_);_("$"* (#,##0.00);_("$"* "-"??_);_(@_)';
+  const [rcY, rcM, rcD] = (result.weekStart || '').split('-');
+  const [rcY2, rcM2, rcD2] = (result.weekEnd || '').split('-');
+  rc.getCell('C2').value = (rcY && rcY2) ? `${rcM}/${rcD}/${rcY} - ${rcM2}/${rcD2}/${rcY2}` : `${result.weekStart} - ${result.weekEnd}`;
+  let rcRow = 4;
   inv.employees.forEach((e) => {
     if (e.errors.length) return;
-    const taxOverrides = (payrollConfig.employerTax || {}).overrides || {};
-    const wcOverrides = (payrollConfig.workersComp || {}).overrides || {};
-    const taxSrc = Object.keys(taxOverrides).some((k) => k.toLowerCase() === e.employeeName.toLowerCase()) ? 'Employee override' : 'Default';
-    const wcSrc = Object.keys(wcOverrides).some((k) => k.toLowerCase() === e.employeeName.toLowerCase()) ? 'Employee override' : e.classification ? `"${e.classification.keyword}" classification (from job code)` : 'Default';
-    const row = rc.addRow([e.employeeName, num(e.employerTaxRatePercent), taxSrc, num(e.wcRate), wcSrc]);
-    row.getCell(2).numFmt = '0.0000'; row.getCell(4).numFmt = '0.0000'; borderRow(row);
+    const nameRow = rcRow;
+    rc.getCell(rcRow, 1).value = e.employeeName;
+    rc.getCell(rcRow, 2).value = 'Gross Pay';
+    rc.getCell(rcRow, 3).value = num(e.totalGross);
+    rc.getCell(rcRow, 3).numFmt = rcMoneyFmt;
+    rc.getCell(rcRow, 3).font = { bold: true };
+    rcRow++;
+    rc.getCell(rcRow, 2).value = 'Employer tax';
+    rc.getCell(rcRow, 3).value = num(e.employerTax);
+    rc.getCell(rcRow, 3).numFmt = rcMoneyFmt;
+    rcRow++;
+    rc.getCell(rcRow, 2).value = 'Tax Rate';
+    rc.getCell(rcRow, 3).value = num(e.employerTaxRatePercent);
+    rc.getCell(rcRow, 3).numFmt = '0.00';
+    rcRow++;
+    for (let r = nameRow; r < rcRow; r++) { for (let c = 1; c <= 3; c++) rc.getCell(r, c).border = THIN_BORDER; }
   });
-  rc.views = [{ state: 'frozen', ySplit: 3 }]; autoFitColumns(rc);
+  autoFitColumns(rc);
 
   // Daily OT Audit
   const audit = wb.addWorksheet('Daily OT Audit');
