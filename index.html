@@ -1159,11 +1159,20 @@ function generateExcelWorkbook(result, payrollConfig) {
   // Rate Calculation — matches your actual reference workbook's layout
   // exactly: a date-range header, then per billable employee, three
   // stacked rows (Gross Pay / Employer tax / Tax Rate) rather than one
-  // row per employee. Employer tax is the employee's actual computed
-  // employer-tax dollar amount; Tax Rate is that amount as a % of Gross
-  // Pay (tax ÷ gross × 100) — the same relationship the reference
-  // workbook itself uses, just computed forward here from the configured
-  // rate instead of backward from two manually-typed sub-totals.
+  // row per employee.
+  //
+  // IMPORTANT: Gross Pay here is the employee's FULL week's payroll gross
+  // (Regular + OT hours × their rate, across ALL their work that week —
+  // Clubhouse, BluntD and Crysp combined), NOT the Clubhouse-ratio-scaled
+  // amount used for client billing on the NewClubhouse sheet. Employer
+  // tax is computed on that same full gross. This was confirmed directly
+  // against a real reference (Aug 24-30, 2026): an employee who did zero
+  // Clubhouse-coded work that week (0% ratio, so $0 on the Clubhouse bill)
+  // still has a real, nonzero Gross Pay/Employer tax here, because this
+  // sheet reflects their actual full paycheck and the real employer tax
+  // liability on it — e.g. Carlos Silva, 40 reg + 3.10 OT hrs × $30/$45 =
+  // $1,339.50 gross, matching the reference to the cent, even though his
+  // Clubhouse-billed amount that week was $0.
   const rc = wb.addWorksheet('Rate Calculation');
   const rcMoneyFmt = '_("$"* #,##0.00_);_("$"* (#,##0.00);_("$"* "-"??_);_(@_)';
   const [rcY, rcM, rcD] = (result.weekStart || '').split('-');
@@ -1172,15 +1181,17 @@ function generateExcelWorkbook(result, payrollConfig) {
   let rcRow = 4;
   inv.employees.forEach((e) => {
     if (e.errors.length) return;
+    const fullGross = e.regularHours.times(e.regularRate).plus(e.otHours.times(e.otRate));
+    const fullEmployerTax = fullGross.times(e.employerTaxRatePercent).div(100);
     const nameRow = rcRow;
     rc.getCell(rcRow, 1).value = e.employeeName;
     rc.getCell(rcRow, 2).value = 'Gross Pay';
-    rc.getCell(rcRow, 3).value = num(e.totalGross);
+    rc.getCell(rcRow, 3).value = num(fullGross);
     rc.getCell(rcRow, 3).numFmt = rcMoneyFmt;
     rc.getCell(rcRow, 3).font = { bold: true };
     rcRow++;
     rc.getCell(rcRow, 2).value = 'Employer tax';
-    rc.getCell(rcRow, 3).value = num(e.employerTax);
+    rc.getCell(rcRow, 3).value = num(fullEmployerTax);
     rc.getCell(rcRow, 3).numFmt = rcMoneyFmt;
     rcRow++;
     rc.getCell(rcRow, 2).value = 'Tax Rate';
