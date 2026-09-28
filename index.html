@@ -369,33 +369,14 @@
       <summary><h2 style="display:inline">Configuration</h2></summary>
       <div class="config-body">
         <p style="color:var(--text-muted); font-size:0.85rem; margin:0;">
-          Rates and settings below drive every calculation. Nothing here is hardcoded in the app.
-          <code>payroll_config.json</code> (business rules, exclusions, entity keywords) is required and,
-          if it sits next to this page, loads automatically — edit and commit the JSON to update it, no
-          code changes needed. <code>hourly_rates.json</code> is optional: each week's own uploaded weekly
-          payroll sheet normally carries its own "Hourly Rates" tab, which is used first automatically;
-          the table below is only a fallback for an employee that sheet doesn't cover. Otherwise edits
-          made here are saved in this browser and used on future visits.
+          This is a single self-contained file — no separate config or rates file to host or upload.
+          Business rules below (exclusions, tax/WC rates, entity keywords, thresholds) ship with sensible
+          defaults built into the page; edits you make here are saved in this browser and used on future
+          visits ("Export JSON" downloads a backup, "Import JSON" loads one back in — handy for moving
+          your settings to another machine). <strong>Hourly rates are never entered here.</strong> Every
+          employee's hourly rate comes only from the uploaded weekly payroll sheet's own "Hourly Rates"
+          tab for that specific week — nothing else to maintain, and no old rate can be reused by mistake.
         </p>
-
-        <div>
-          <div class="card-head">
-            <h3 style="font-family:inherit;font-size:1rem;">Hourly rates fallback (hourly_rates.json, optional)</h3>
-            <div class="row-actions">
-              <button class="ghost small" id="addRateRow">+ Add employee</button>
-              <button class="ghost small" id="exportRates">Export JSON</button>
-              <label class="ghost small" style="cursor:pointer;">Import JSON
-                <input type="file" id="importRates" accept="application/json" hidden>
-              </label>
-            </div>
-          </div>
-          <div class="table-scroll">
-            <table id="ratesTable">
-              <thead><tr><th>Name</th><th>Hourly rate</th><th>Notes</th><th></th></tr></thead>
-              <tbody id="ratesBody"></tbody>
-            </table>
-          </div>
-        </div>
 
         <div class="config-grid">
           <label class="field">Employer tax rate — default %
@@ -483,7 +464,11 @@
 
         <div class="row-actions">
           <button class="primary small" id="saveConfig">Save configuration</button>
-          <button class="danger small" id="resetConfig">Discard local edits &amp; reload from JSON files</button>
+          <button class="ghost small" id="exportConfig">Export JSON</button>
+          <label class="ghost small" style="cursor:pointer;">Import JSON
+            <input type="file" id="importConfig" accept="application/json" hidden>
+          </label>
+          <button class="danger small" id="resetConfig">Discard local edits &amp; reset to built-in defaults</button>
         </div>
       </div>
     </details>
@@ -494,23 +479,53 @@
 
 <script>
 /* =====================================================================
-   CONFIG LOADING — no employee names, rates, tax rates, WC rates, or
-   business rules are embedded in this file. Everything comes from
-   hourly_rates.json and payroll_config.json, fetched from the same
-   folder as this page (e.g. a GitHub Pages repo). If either file can't
-   be loaded (and there's no previously-saved copy from a prior visit in
-   this browser), the app shows a blocking "Configuration Missing" state
-   and refuses to process anything — it never invents data to fall back
-   on.
+   CONFIG — single self-contained file, no separate JSON files to host or
+   upload. Business rules (entity keywords, exclusions, tax/WC rates,
+   thresholds) are embedded below as DEFAULT_PAYROLL_CONFIG and are
+   editable in-browser via the Configuration panel; edits are saved to
+   this browser's local storage so they persist across visits/reloads on
+   the same machine ("Export JSON" downloads a copy to back up or move to
+   another machine, "Import JSON" loads one back in).
+
+   There is deliberately no separate hourly-rates file, and none of this
+   embedded config carries employee hourly rates. Every hourly rate comes
+   solely from the uploaded weekly payroll sheet's own "Hourly Rates" tab
+   for that specific week — see parseWeeklyPayrollFile and
+   calculatePayroll below. If a week's own sheet doesn't have a rate for
+   an employee, that employee is blocked with "Missing Hourly Rate"
+   rather than the app guessing or reusing an old rate from elsewhere.
    ===================================================================== */
-const STORAGE_KEY = 'clubhouse-payroll-config-v1';
+const DEFAULT_PAYROLL_CONFIG = {
+  "version": 3,
+  "entityKeywords": { "Clubhouse": ["clubhouse"], "BluntD": ["bluntd"], "Crysp": ["crysp"] },
+  "breakKeywords": { "rest": ["rest break"], "lunch": ["lunch break"] },
+  "dailyRegularLimit": 8,
+  "dailyOvertimeLimit": 4,
+  "overtimeMultiplier": 1.5,
+  "serviceChargeRate": 0.10,
+  "maxWeeklyPeriodDays": 7,
+  "jobClassifications": { "supervision": { "wcRate": 0.004996, "excludeFromClubhouse": false } },
+  "clubhouseExclusions": ["Hazel Herrera", "Paul Bates"],
+  "employerTax": {
+    "defaultRatePercent": 7.65,
+    "overrides": {
+      "Carlos Silva": 7.650189,
+      "Genesis Lopez": 7.650188,
+      "Paola Sanchez": 7.649797,
+      "Sylvia Lopez": 7.651337
+    }
+  },
+  "workersComp": { "defaultRate": 0.041133, "overrides": {} }
+};
+
+const STORAGE_KEY = 'clubhouse-payroll-config-v2';
 
 function loadCachedConfig() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && parsed.hourlyRates && parsed.payrollConfig) return parsed;
+      if (parsed && parsed.payrollConfig && parsed.payrollConfig.entityKeywords) return parsed;
     }
   } catch (e) { /* ignore, storage unavailable */ }
   return null;
@@ -519,46 +534,17 @@ function saveConfigToStorage(cfg) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg)); } catch (e) { /* storage unavailable */ }
 }
 
-async function fetchJsonIfPresent(path) {
-  try {
-    const res = await fetch(path, { cache: 'no-store' });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch (e) {
-    return null; // file:// CORS, offline, or file not present
-  }
-}
-
-// Tries hourly_rates.json / payroll_config.json next to this page first
-// (the source of truth — editing/committing the JSON is enough to update
-// rates or rules, no code change). Falls back to whatever this browser
-// cached from the last successful load, ONLY as a convenience for
-// re-visiting the same machine. payroll_config.json (business rules,
-// exclusions, entity keywords) is REQUIRED — with neither a file nor a
-// cached copy, this returns null and the caller blocks.
-//
-// hourly_rates.json is OPTIONAL. Each week's own uploaded weekly payroll
-// sheet normally carries its own "Hourly Rates" tab, which the app reads
-// directly as the primary rate source (see parseWeeklyPayrollFile) — so a
-// separately-maintained master rate file is no longer required. When
-// hourly_rates.json isn't present, this substitutes an empty employee
-// list rather than blocking; hourly_rates.json (if present) is then only
-// a fallback for an employee the weekly sheet's own rate tab didn't cover.
-async function loadConfigFromFilesOrCache() {
-  const [rates, payroll] = await Promise.all([
-    fetchJsonIfPresent('./hourly_rates.json'),
-    fetchJsonIfPresent('./payroll_config.json'),
-  ]);
+// Business-rule config: whatever this browser last saved (from editing in
+// the Configuration panel, or a prior "Import JSON"), or the embedded
+// defaults above on first-ever load. This never fetches anything and
+// never fails, so there is no "Configuration Missing" state anymore.
+function loadConfig() {
   const cached = loadCachedConfig();
-  const hourlyRates = (rates && rates.employees) ? rates : (cached ? cached.hourlyRates : { version: 1, currency: 'USD', employees: [] });
-  const payrollConfig = (payroll && payroll.entityKeywords) ? payroll : (cached ? cached.payrollConfig : null);
-  if (!payrollConfig) return null;
-  if (payroll && payroll.entityKeywords) saveConfigToStorage({ hourlyRates, payrollConfig });
-  return { hourlyRates, payrollConfig };
+  const payrollConfig = cached ? cached.payrollConfig : JSON.parse(JSON.stringify(DEFAULT_PAYROLL_CONFIG));
+  return { payrollConfig };
 }
 
-let CONFIG = null; // null until loadConfigFromFilesOrCache() resolves in init() below
-let CONFIG_MISSING = false;
+let CONFIG = null; // set from loadConfig() in init() below
 let CURRENT_RESULT = null;
 let CURRENT_FILENAME = null;
 
@@ -710,29 +696,6 @@ const Engine = (function () {
     });
   }
 
-  // asOfDate (a 'YYYY-MM-DD' string, normally the timesheet's weekStart) is
-  // used only when the employee record has a rateHistory array — hourly
-  // rates can change over time, and the current hourly_rates.json value is
-  // not necessarily correct for an older uploaded week. When rateHistory is
-  // present, the matching entry (effectiveFrom <= asOfDate <= effectiveTo,
-  // either bound optional/open-ended) is used; if none matches (including
-  // when asOfDate is missing), this returns null rather than guessing,
-  // which surfaces as the existing MISSING_HOURLY_RATE block. When the
-  // employee has no rateHistory at all, the flat hourlyRate field is used
-  // as before (fully backward compatible).
-  function getEmployeeHourlyRate(employeeName, hourlyRatesConfig, asOfDate) {
-    const found = ((hourlyRatesConfig && hourlyRatesConfig.employees) || []).find((x) => x.name.trim().toLowerCase() === employeeName.trim().toLowerCase());
-    if (!found) return null;
-    if (!Array.isArray(found.rateHistory) || !found.rateHistory.length) return found.hourlyRate;
-    if (!asOfDate) return null;
-    const match = found.rateHistory.find((entry) => {
-      if (entry.effectiveFrom && asOfDate < entry.effectiveFrom) return false;
-      if (entry.effectiveTo && asOfDate > entry.effectiveTo) return false;
-      return true;
-    });
-    return match ? match.hourlyRate : null;
-  }
-
   // Job-code-driven, no employee names involved: for each employee, look
   // at every job code (1/2/3, any row) for a match against the keys of
   // payrollConfig.jobClassifications (e.g. "supervision"). The first
@@ -769,11 +732,11 @@ const Engine = (function () {
   // lowercased trimmed employee name -> { regularHours, otHours }. An
   // in-scope employee missing from that sheet blocks generation
   // (MISSING_WEEKLY_HOURS) rather than falling back to a computed guess.
-  // asOfDate (normally the timesheet's weekStart) is passed through to
-  // getEmployeeHourlyRate so an employee with an effective-dated
-  // rateHistory gets the rate that actually applied during this uploaded
-  // week, not just whatever hourly_rates.json's current flat value is.
-  function calculatePayroll(weeklyRows, ratioRows, hourlyRatesConfig, payrollConfig, classifications, weeklyPayrollMap, asOfDate) {
+  // Hourly rate ALSO comes only from that same weekly payroll sheet — its
+  // own "Hourly Rates" tab — read directly, single source, no separate
+  // rates file to maintain. If that sheet doesn't carry a rate for an
+  // employee, this blocks with MISSING_HOURLY_RATE rather than guessing.
+  function calculatePayroll(weeklyRows, ratioRows, payrollConfig, classifications, weeklyPayrollMap) {
     const ratioByName = new Map(ratioRows.map((r) => [r.employeeName, r]));
     classifications = classifications || new Map();
     weeklyPayrollMap = weeklyPayrollMap || new Map();
@@ -784,14 +747,10 @@ const Engine = (function () {
       const ratioInfo = ratioByName.get(w.employeeName);
       const classification = classifications.get(w.employeeName) || null;
       const payrollEntry = weeklyPayrollMap.get(w.employeeName.trim().toLowerCase());
-      // The uploaded weekly payroll sheet's own "Hourly Rates" tab (this
-      // week's own rate table) is the primary source, per the employee's
-      // request to stop depending on a separately-maintained master file.
-      // hourly_rates.json (with its optional rateHistory) is only used as
-      // a fallback when that sheet didn't cover this employee.
-      const fromWeeklySheet = payrollEntry && payrollEntry.hourlyRate !== undefined && payrollEntry.hourlyRate !== null;
-      const hourlyRate = fromWeeklySheet ? payrollEntry.hourlyRate : getEmployeeHourlyRate(w.employeeName, hourlyRatesConfig, asOfDate);
-      const hourlyRateSource = hourlyRate === null || hourlyRate === undefined ? null : (fromWeeklySheet ? 'Weekly payroll sheet' : 'hourly_rates.json');
+      // Single source: the uploaded weekly payroll sheet's own "Hourly
+      // Rates" tab. No separate rates file, no fallback.
+      const hourlyRate = (payrollEntry && payrollEntry.hourlyRate !== undefined && payrollEntry.hourlyRate !== null) ? payrollEntry.hourlyRate : null;
+      const hourlyRateSource = (hourlyRate === null || hourlyRate === undefined) ? null : 'Weekly payroll sheet';
       // Clubhouse-exclusion SCOPE (e.g. Hazel/Paul) is decided upstream in
       // runPipeline via payrollConfig.clubhouseExclusions — those employees
       // never reach this function at all. A job classification can still
@@ -902,7 +861,7 @@ const Engine = (function () {
     return errs;
   }
 
-  function runPipeline(csvRows, hourlyRatesConfig, payrollConfig, weeklyPayrollMap) {
+  function runPipeline(csvRows, payrollConfig, weeklyPayrollMap) {
     const validationErrors = [];
     validatePayrollConfig(payrollConfig).forEach((e) => validationErrors.push(e));
     if (!weeklyPayrollMap || !weeklyPayrollMap.size) {
@@ -1018,7 +977,7 @@ const Engine = (function () {
     });
 
     const classifications = detectJobClassifications(records, payrollConfig);
-    let payroll = calculatePayroll(inScope, ratios, hourlyRatesConfig, payrollConfig, classifications, workingPayrollMap, weekStart);
+    let payroll = calculatePayroll(inScope, ratios, payrollConfig, classifications, workingPayrollMap);
     payroll = calculateTax(payroll, payrollConfig.employerTax || {});
     payroll = calculateWorkersComp(payroll, payrollConfig.workersComp || {});
     const invoice = calculateInvoice(payroll, payrollConfig);
@@ -1026,7 +985,7 @@ const Engine = (function () {
     invoice.autoFilledDays = autoFilledDays;
 
     invoice.employees.forEach((row) => {
-      if (row.errors.includes('MISSING_HOURLY_RATE')) validationErrors.push({ type: 'MISSING_HOURLY_RATE', message: `Missing hourly rate for ${row.employeeName} — not found in the weekly payroll sheet's own "Hourly Rates" tab, and not in hourly_rates.json either.` });
+      if (row.errors.includes('MISSING_HOURLY_RATE')) validationErrors.push({ type: 'MISSING_HOURLY_RATE', message: `Missing hourly rate for ${row.employeeName} — not found in the weekly payroll sheet's own "Hourly Rates" tab. Add that employee's rate to the "Hourly Rates" tab in the uploaded weekly payroll workbook and re-upload.` });
       if (row.errors.includes('MISSING_WEEKLY_HOURS')) validationErrors.push({ type: 'MISSING_WEEKLY_HOURS', message: `No Regular/OT hours found for ${row.employeeName} in the uploaded weekly payroll sheet.` });
       if (row.errors.includes('MISSING_TAX_RATE')) validationErrors.push({ type: 'MISSING_TAX_RATE', message: `Missing employer tax rate for ${row.employeeName}` });
       if (row.errors.includes('MISSING_WC_RATE')) validationErrors.push({ type: 'MISSING_WC_RATE', message: `Missing workers' comp rate for ${row.employeeName}` });
@@ -1035,13 +994,13 @@ const Engine = (function () {
     return { weekStart, weekEnd, employees, records, daily, weekly, ratios, invoice, validationErrors, canGenerate: validationErrors.length === 0 };
   }
 
-  return { parseTimesheet, detectDuplicateRows, normalizeEmployees, classifyJobCodes, detectJobClassifications, calculateDailyHours, calculateWeeklyHours, calculateEntityRatios, calculatePayroll, calculateTax, calculateWorkersComp, calculateInvoice, validatePayrollConfig, runPipeline, getEmployeeHourlyRate };
+  return { parseTimesheet, detectDuplicateRows, normalizeEmployees, classifyJobCodes, detectJobClassifications, calculateDailyHours, calculateWeeklyHours, calculateEntityRatios, calculatePayroll, calculateTax, calculateWorkersComp, calculateInvoice, validatePayrollConfig, runPipeline };
 })();
 
 /* =====================================================================
    generateExcel — output formatting only, no calculation logic.
    ===================================================================== */
-function generateExcelWorkbook(result, hourlyRatesConfig, payrollConfig) {
+function generateExcelWorkbook(result, payrollConfig) {
   const HEADER_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2F5233' } };
   const HEADER_FONT = { bold: true, color: { argb: 'FFFFFFFF' } };
   const THIN_BORDER = { top: { style: 'thin', color: { argb: 'FFB0B0B0' } }, left: { style: 'thin', color: { argb: 'FFB0B0B0' } }, bottom: { style: 'thin', color: { argb: 'FFB0B0B0' } }, right: { style: 'thin', color: { argb: 'FFB0B0B0' } } };
@@ -1186,19 +1145,15 @@ function generateExcelWorkbook(result, hourlyRatesConfig, payrollConfig) {
   nc.views = [{ state: 'frozen', ySplit: 3 }]; autoFitColumns(nc);
 
   // Hourly Rates — shows the rate actually USED for each employee this
-  // run, and where it came from: the uploaded weekly payroll sheet's own
-  // "Hourly Rates" tab (primary source) or hourly_rates.json (fallback,
-  // only used when that sheet didn't cover the employee).
+  // run, read straight from the uploaded weekly payroll sheet's own
+  // "Hourly Rates" tab (the only source — no separate rates file).
   const hr = wb.addWorksheet('Hourly Rates');
-  const hrHeader = hr.addRow(['Full Name', 'Pay Rate', 'Source']); styleHeaderRow(hrHeader);
+  const hrHeader = hr.addRow(['Full Name', 'Pay Rate']); styleHeaderRow(hrHeader);
   inv.employees.slice().sort((a, b) => a.employeeName.localeCompare(b.employeeName)).forEach((e) => {
-    const row = hr.addRow([e.employeeName, e.hourlyRate === null || e.hourlyRate === undefined ? '' : num(e.hourlyRate), e.hourlyRateSource || 'Missing']);
+    const row = hr.addRow([e.employeeName, e.hourlyRate === null || e.hourlyRate === undefined ? 'Missing' : num(e.hourlyRate)]);
     if (e.hourlyRate !== null && e.hourlyRate !== undefined) row.getCell(2).numFmt = currencyFmt;
     borderRow(row);
   });
-  hr.addRow([]);
-  const fallbackConfigured = (hourlyRatesConfig.employees || []).length;
-  hr.addRow([`hourly_rates.json fallback table has ${fallbackConfigured} employee(s) configured (used only when the weekly payroll sheet's own "Hourly Rates" tab doesn't cover an employee).`]);
   hr.views = [{ state: 'frozen', ySplit: 1 }]; autoFitColumns(hr);
 
   // Rate Calculation — matches your actual reference workbook's layout
@@ -1340,7 +1295,7 @@ function renderEmployeeTable(result) {
 
 function processFile(rows, filename) {
   if (!CONFIG) return; // Configuration Missing — blocked in init()
-  const result = Engine.runPipeline(rows, CONFIG.hourlyRates, CONFIG.payrollConfig, PARSED_WEEKLY_PAYROLL);
+  const result = Engine.runPipeline(rows, CONFIG.payrollConfig, PARSED_WEEKLY_PAYROLL);
   CURRENT_RESULT = result;
   CURRENT_FILENAME = filename;
   renderValidation(result);
@@ -1504,10 +1459,8 @@ async function parseWeeklyPayrollFile(file) {
     const result = parseWeeklyPayrollObjects(objRows);
     // The same weekly payroll workbook usually carries its own "Hourly
     // Rates" sheet (Full Name / Pay Rate / Notes) — this week's own rate
-    // table, not a separately-maintained master file. When present, it's
-    // the primary source of each employee's hourly rate (merged onto the
-    // per-employee entries below); hourly_rates.json, if uploaded/present,
-    // is only a fallback for an employee this sheet doesn't cover.
+    // table, and the ONLY source of hourly rate the app uses (merged onto
+    // the per-employee entries below). There is no separate rates file.
     if (result.map) {
       const ratesSheet = wb.worksheets.find((s) => /hourly rate/i.test(s.name));
       if (ratesSheet) {
@@ -1609,7 +1562,7 @@ $('downloadBtn').addEventListener('click', async () => {
   btn.textContent = 'Building workbook…';
   btn.disabled = true;
   try {
-    const wb = generateExcelWorkbook(CURRENT_RESULT, CONFIG.hourlyRates, CONFIG.payrollConfig);
+    const wb = generateExcelWorkbook(CURRENT_RESULT, CONFIG.payrollConfig);
     const buffer = await wb.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const weekLabel = (CURRENT_RESULT.weekStart || 'week') + '_thru_' + (CURRENT_RESULT.weekEnd || '');
@@ -1628,24 +1581,6 @@ $('downloadBtn').addEventListener('click', async () => {
 });
 
 /* ---------------- Configuration panel ---------------- */
-function renderRatesTable() {
-  const body = $('ratesBody');
-  body.innerHTML = CONFIG.hourlyRates.employees.map((emp, i) => `
-    <tr>
-      <td><input type="text" data-idx="${i}" data-field="name" value="${emp.name.replace(/"/g, '&quot;')}"></td>
-      <td><input type="number" step="0.01" data-idx="${i}" data-field="hourlyRate" value="${emp.hourlyRate}"></td>
-      <td><input type="text" data-idx="${i}" data-field="notes" value="${(emp.notes || '').replace(/"/g, '&quot;')}"></td>
-      <td><button class="danger small" data-remove="${i}">Remove</button></td>
-    </tr>`).join('');
-  body.querySelectorAll('input').forEach((inp) => inp.addEventListener('change', (e) => {
-    const idx = Number(e.target.dataset.idx); const field = e.target.dataset.field;
-    CONFIG.hourlyRates.employees[idx][field] = field === 'hourlyRate' ? Number(e.target.value) : e.target.value;
-  }));
-  body.querySelectorAll('[data-remove]').forEach((b) => b.addEventListener('click', () => {
-    CONFIG.hourlyRates.employees.splice(Number(b.dataset.remove), 1); renderRatesTable();
-  }));
-}
-
 function renderExclusionTags() {
   $('exclusionTags').innerHTML = (CONFIG.payrollConfig.clubhouseExclusions || []).map((name, i) =>
     `<span class="tag">${name}<button data-idx="${i}">&times;</button></span>`).join('');
@@ -1717,7 +1652,6 @@ function renderEntityKeywords() {
 
 function renderConfigPanel() {
   if (!CONFIG) return;
-  renderRatesTable();
   renderExclusionTags();
   renderOverrideTable('taxOverrideBody', CONFIG.payrollConfig.employerTax.overrides, 'tax', '0.0001');
   renderOverrideTable('wcOverrideBody', CONFIG.payrollConfig.workersComp.overrides, 'wc', '0.0001');
@@ -1732,7 +1666,6 @@ function renderConfigPanel() {
   $('cfgMaxWeekDays').value = CONFIG.payrollConfig.maxWeeklyPeriodDays !== undefined ? CONFIG.payrollConfig.maxWeeklyPeriodDays : '';
 }
 
-$('addRateRow').addEventListener('click', () => { CONFIG.hourlyRates.employees.push({ name: 'New Employee', hourlyRate: 0, notes: '' }); renderRatesTable(); });
 $('addJobClass').addEventListener('click', () => {
   CONFIG.payrollConfig.jobClassifications = CONFIG.payrollConfig.jobClassifications || {};
   let key = 'new-keyword'; let i = 1;
@@ -1747,14 +1680,14 @@ $('addExclusion').addEventListener('click', () => {
 $('addTaxOverride').addEventListener('click', () => { CONFIG.payrollConfig.employerTax.overrides['New Employee'] = CONFIG.payrollConfig.employerTax.defaultRatePercent; renderOverrideTable('taxOverrideBody', CONFIG.payrollConfig.employerTax.overrides, 'tax', '0.0001'); });
 $('addWcOverride').addEventListener('click', () => { CONFIG.payrollConfig.workersComp.overrides['New Employee'] = CONFIG.payrollConfig.workersComp.defaultRate; renderOverrideTable('wcOverrideBody', CONFIG.payrollConfig.workersComp.overrides, 'wc', '0.0001'); });
 
-$('exportRates').addEventListener('click', async () => {
-  const blob = new Blob([JSON.stringify(CONFIG.hourlyRates, null, 2)], { type: 'application/json' });
-  try { await saveFile('hourly_rates.json', blob); } catch (e) { /* declined or unavailable */ }
+$('exportConfig').addEventListener('click', async () => {
+  const blob = new Blob([JSON.stringify(CONFIG.payrollConfig, null, 2)], { type: 'application/json' });
+  try { await saveFile('payroll_config.json', blob); } catch (e) { /* declined or unavailable */ }
 });
-$('importRates').addEventListener('change', (e) => {
+$('importConfig').addEventListener('change', (e) => {
   const file = e.target.files[0]; if (!file) return;
   const reader = new FileReader();
-  reader.onload = (ev) => { try { const parsed = JSON.parse(ev.target.result); if (parsed && parsed.employees) { CONFIG.hourlyRates = parsed; renderRatesTable(); } } catch (err) { alert('Invalid JSON file'); } };
+  reader.onload = (ev) => { try { const parsed = JSON.parse(ev.target.result); if (parsed && parsed.entityKeywords) { CONFIG.payrollConfig = parsed; saveConfigToStorage(CONFIG); renderConfigPanel(); if (PARSED_ROWS) processFile(PARSED_ROWS, $('metaFile').textContent); } else { alert('Invalid config JSON file'); } } catch (err) { alert('Invalid JSON file'); } };
   reader.readAsText(file);
 });
 
@@ -1769,14 +1702,9 @@ $('saveConfig').addEventListener('click', () => {
   if (PARSED_ROWS) processFile(PARSED_ROWS, $('metaFile').textContent);
   const btn = $('saveConfig'); const orig = btn.textContent; btn.textContent = 'Saved ✓'; setTimeout(() => (btn.textContent = orig), 1200);
 });
-$('resetConfig').addEventListener('click', async () => {
+$('resetConfig').addEventListener('click', () => {
   try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* ignore */ }
-  const fresh = await loadConfigFromFilesOrCache();
-  if (!fresh) { showConfigMissing(); return; }
-  CONFIG = fresh;
-  CONFIG_MISSING = false;
-  $('configMissingSlot').innerHTML = '';
-  setUploadEnabled(true);
+  CONFIG = { payrollConfig: JSON.parse(JSON.stringify(DEFAULT_PAYROLL_CONFIG)) };
   renderConfigPanel();
   if (PARSED_ROWS) processFile(PARSED_ROWS, $('metaFile').textContent);
 });
@@ -1791,20 +1719,9 @@ function setUploadEnabled(enabled) {
   if (enabled) maybeEnableProcess(); else $('processBtn').disabled = true;
 }
 
-function showConfigMissing() {
-  CONFIG_MISSING = true;
-  $('configMissingSlot').innerHTML = `<div class="banner err"><div><div class="title">Configuration Missing</div>
-    Could not load <code>payroll_config.json</code> from this page's folder, and no previously-saved
-    configuration was found in this browser. Add it next to <code>index.html</code> (e.g. commit it to the
-    same GitHub Pages folder) and reload this page. (<code>hourly_rates.json</code> is optional — each
-    week's own uploaded weekly payroll sheet normally carries its own rate table, which is used first.)
-    Upload and processing are disabled until configuration loads successfully.</div></div>`;
-  setUploadEnabled(false);
-}
-
-(async function init() {
-  CONFIG = await loadConfigFromFilesOrCache();
-  if (!CONFIG) { showConfigMissing(); return; }
+(function init() {
+  CONFIG = loadConfig();
   renderConfigPanel();
+  setUploadEnabled(true);
 })();
 </script>
