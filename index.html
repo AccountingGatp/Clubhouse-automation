@@ -932,6 +932,32 @@ const Engine = (function () {
       inScope.push(w);
     });
 
+    // Cross-check: when the weekly payroll sheet's rows carried a date
+    // column, verify it actually covers every date that employee appears
+    // on in the timesheet. A payroll sheet exported before the week
+    // finished (e.g. missing the last day) would otherwise silently
+    // understate that employee's Regular/OT hours and the resulting bill
+    // — so a gap blocks generation instead of guessing. Skipped entirely
+    // for an employee whose payroll rows carried no date column at all
+    // (nothing to check against).
+    const timesheetDatesByEmployee = new Map();
+    daily.forEach((d) => {
+      const key = d.employeeName.trim().toLowerCase();
+      if (!timesheetDatesByEmployee.has(key)) timesheetDatesByEmployee.set(key, new Set());
+      timesheetDatesByEmployee.get(key).add(d.localDate);
+    });
+    inScope.forEach((w) => {
+      const key = w.employeeName.trim().toLowerCase();
+      const payrollEntry = weeklyPayrollMap ? weeklyPayrollMap.get(key) : null;
+      if (!payrollEntry || !payrollEntry.dates || !payrollEntry.dates.length) return;
+      const payrollDateSet = new Set(payrollEntry.dates);
+      const tsDates = timesheetDatesByEmployee.get(key) || new Set();
+      const missing = [...tsDates].filter((d) => !payrollDateSet.has(d)).sort();
+      if (missing.length) {
+        validationErrors.push({ type: 'WEEKLY_PAYROLL_DATE_GAP', message: `Weekly payroll sheet is missing ${w.employeeName} for ${missing.join(', ')} — present in the timesheet but not in the uploaded weekly payroll sheet, so that day's Regular/OT/Double hours aren't included. Re-export the weekly payroll sheet for the full week before generating.` });
+      }
+    });
+
     const classifications = detectJobClassifications(records, payrollConfig);
     let payroll = calculatePayroll(inScope, ratios, hourlyRatesConfig, payrollConfig, classifications, weeklyPayrollMap, weekStart);
     payroll = calculateTax(payroll, payrollConfig.employerTax || {});
@@ -1244,7 +1270,7 @@ function processFile(rows, filename) {
 }
 
 let PARSED_ROWS = null;
-let PARSED_WEEKLY_PAYROLL = null; // Map(lowercased trimmed name -> {employeeName, regularHours, otHours, doubleHours})
+let PARSED_WEEKLY_PAYROLL = null; // Map(lowercased trimmed name -> {employeeName, regularHours, otHours, doubleHours, dates})
 
 function maybeEnableProcess() {
   $('processBtn').disabled = !CONFIG || !PARSED_ROWS || !PARSED_WEEKLY_PAYROLL || !PARSED_WEEKLY_PAYROLL.size;
@@ -1272,6 +1298,23 @@ const WEEKLY_PAYROLL_NAME_HEADERS = ['employee', 'employee name', 'name', 'fulln
 const WEEKLY_PAYROLL_REGULAR_HEADERS = ['regular hours', 'regular hr', 'regular hrs', 'regular', 'reg hours', 'reg hr', 'reg'];
 const WEEKLY_PAYROLL_OT_HEADERS = ['ot hours', 'ot hr', 'ot hrs', 'ot', 'overtime', 'overtime hours', 'overtime hr'];
 const WEEKLY_PAYROLL_DOUBLE_HEADERS = ['double hours', 'double hr', 'double hrs', 'double', 'dt hours', 'dt hr', 'dt'];
+const WEEKLY_PAYROLL_DATE_HEADERS = ['local_date', 'date', 'work date', 'workdate', 'day'];
+// Normalizes an Excel date cell (a JS Date, since ExcelJS parses date-typed
+// cells) or a date-ish string into 'YYYY-MM-DD', for cross-checking day
+// coverage against the timesheet. Returns null if it can't confidently
+// parse a date — never guesses.
+function normalizeDateValue(v) {
+  if (v instanceof Date && !isNaN(v.getTime())) {
+    const y = v.getUTCFullYear(); const m = String(v.getUTCMonth() + 1).padStart(2, '0'); const d = String(v.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  const s = (v === null || v === undefined) ? '' : String(v).trim();
+  const m1 = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m1) return `${m1[1]}-${m1[2]}-${m1[3]}`;
+  const m2 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m2) return `${m2[3]}-${m2[1].padStart(2, '0')}-${m2[2].padStart(2, '0')}`;
+  return null;
+}
 // The real weekly payroll workbook's authoritative sheet is named exactly
 // this. Matched case-insensitively; falls back to the first worksheet only
 // if no sheet with this name exists, so older/differently-shaped files
@@ -1306,6 +1349,7 @@ function parseWeeklyPayrollObjects(objRows) {
   const regKey = WEEKLY_PAYROLL_REGULAR_HEADERS.map((h) => headerByNorm[h]).find(Boolean);
   const otKey = WEEKLY_PAYROLL_OT_HEADERS.map((h) => headerByNorm[h]).find(Boolean);
   const doubleKey = WEEKLY_PAYROLL_DOUBLE_HEADERS.map((h) => headerByNorm[h]).find(Boolean);
+  const dateKey = WEEKLY_PAYROLL_DATE_HEADERS.map((h) => headerByNorm[h]).find(Boolean);
   if ((!nameKey && !fnameIsFullName && !(fnameKey && lnameKey)) || !regKey || !otKey) {
     return { map: null, error: `Could not find the required columns. Found headers: ${headers.join(', ') || '(none)'}. Need an employee name column (e.g. "Employee", "Name" or "fname") and Regular/OT hours columns (e.g. "Regular Hours", "Overtime Hours").` };
   }
@@ -1319,6 +1363,7 @@ function parseWeeklyPayrollObjects(objRows) {
     const regular = Number(row[regKey]);
     const ot = Number(row[otKey]);
     const dbl = doubleKey ? Number(row[doubleKey]) : 0;
+    const dateStr = dateKey ? normalizeDateValue(row[dateKey]) : null;
     const key = name.toLowerCase();
     const existing = map.get(key);
     const regularAdd = isNaN(regular) ? 0 : regular;
@@ -1328,8 +1373,9 @@ function parseWeeklyPayrollObjects(objRows) {
       existing.regularHours += regularAdd;
       existing.otHours += otAdd;
       existing.doubleHours += doubleAdd;
+      if (dateStr) existing.dates.push(dateStr);
     } else {
-      map.set(key, { employeeName: name, regularHours: regularAdd, otHours: otAdd, doubleHours: doubleAdd });
+      map.set(key, { employeeName: name, regularHours: regularAdd, otHours: otAdd, doubleHours: doubleAdd, dates: dateStr ? [dateStr] : [] });
     }
   });
   return { map, error: map.size ? null : 'No employee rows could be read from the file.' };
