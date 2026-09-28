@@ -192,6 +192,7 @@
   }
   .banner.err { background: var(--err-bg); color: var(--err); }
   .banner.ok { background: var(--ok-bg); color: var(--ok); }
+  .banner.warn { background: var(--warn-bg); color: var(--warn); }
   .banner ul { margin: 6px 0 0; padding-left: 18px; }
   .banner .title { font-weight: 700; }
 
@@ -936,34 +937,75 @@ const Engine = (function () {
     // column, verify it actually covers every date that employee appears
     // on in the timesheet. A payroll sheet exported before the week
     // finished (e.g. missing the last day) would otherwise silently
-    // understate that employee's Regular/OT hours and the resulting bill
-    // — so a gap blocks generation instead of guessing. Skipped entirely
-    // for an employee whose payroll rows carried no date column at all
-    // (nothing to check against).
+    // understate that employee's Regular/OT hours and the resulting bill.
+    // Skipped entirely for an employee whose payroll rows carried no date
+    // column at all (nothing to check against).
+    //
+    // When a day is genuinely missing (not present at zero — just absent),
+    // and payrollConfig.dailyOvertimeLimit is configured, that single
+    // day's Regular/OT/Double is computed from the timesheet's paid hours
+    // for that date using the SAME formula the weekly payroll workbook's
+    // own "Overtime Calculation" sheet uses (confirmed against your real
+    // file): Regular = MIN(paid, dailyRegularLimit), OT =
+    // MIN(MAX(paid-dailyRegularLimit,0), dailyOvertimeLimit), Double =
+    // MAX(paid-dailyRegularLimit-dailyOvertimeLimit, 0). This never
+    // touches a day that IS present in the payroll sheet — only fills the
+    // specific missing date — and is recorded in autoFilledDays so it's
+    // fully visible in the UI and the Excel output, never silent. If
+    // dailyOvertimeLimit isn't configured, or the missing date has no
+    // timesheet hours to compute from either, the gap still blocks
+    // generation rather than guessing.
     const timesheetDatesByEmployee = new Map();
+    const dailyByEmpDate = new Map();
     daily.forEach((d) => {
       const key = d.employeeName.trim().toLowerCase();
       if (!timesheetDatesByEmployee.has(key)) timesheetDatesByEmployee.set(key, new Set());
       timesheetDatesByEmployee.get(key).add(d.localDate);
+      dailyByEmpDate.set(`${key}|${d.localDate}`, d);
     });
+    // Work on a deep-enough clone so the caller's weeklyPayrollMap (which
+    // may be reused across multiple runPipeline calls, e.g. re-clicking
+    // "Process" in the UI) is never mutated in place.
+    const workingPayrollMap = weeklyPayrollMap ? new Map([...weeklyPayrollMap].map(([k, v]) => [k, Object.assign({}, v, { dates: (v.dates || []).slice() })])) : weeklyPayrollMap;
+    const autoFilledDays = [];
     inScope.forEach((w) => {
       const key = w.employeeName.trim().toLowerCase();
-      const payrollEntry = weeklyPayrollMap ? weeklyPayrollMap.get(key) : null;
+      const payrollEntry = workingPayrollMap ? workingPayrollMap.get(key) : null;
       if (!payrollEntry || !payrollEntry.dates || !payrollEntry.dates.length) return;
       const payrollDateSet = new Set(payrollEntry.dates);
       const tsDates = timesheetDatesByEmployee.get(key) || new Set();
       const missing = [...tsDates].filter((d) => !payrollDateSet.has(d)).sort();
-      if (missing.length) {
-        validationErrors.push({ type: 'WEEKLY_PAYROLL_DATE_GAP', message: `Weekly payroll sheet is missing ${w.employeeName} for ${missing.join(', ')} — present in the timesheet but not in the uploaded weekly payroll sheet, so that day's Regular/OT/Double hours aren't included. Re-export the weekly payroll sheet for the full week before generating.` });
+      if (!missing.length) return;
+      const canAutoFill = payrollConfig.dailyOvertimeLimit !== undefined && payrollConfig.dailyOvertimeLimit !== null && payrollConfig.dailyRegularLimit !== undefined && payrollConfig.dailyRegularLimit !== null;
+      if (!canAutoFill) {
+        validationErrors.push({ type: 'WEEKLY_PAYROLL_DATE_GAP', message: `Weekly payroll sheet is missing ${w.employeeName} for ${missing.join(', ')} — present in the timesheet but not in the uploaded weekly payroll sheet, so that day's Regular/OT/Double hours aren't included. Re-export the weekly payroll sheet for the full week, or configure "dailyOvertimeLimit" in payroll_config.json to allow auto-filling a missing day from the timesheet.` });
+        return;
       }
+      missing.forEach((dateStr) => {
+        const dayRec = dailyByEmpDate.get(`${key}|${dateStr}`);
+        if (!dayRec) {
+          validationErrors.push({ type: 'WEEKLY_PAYROLL_DATE_GAP', message: `Weekly payroll sheet is missing ${w.employeeName} for ${dateStr}, and no timesheet hours were found for that date either — cannot auto-fill.` });
+          return;
+        }
+        const paid = dayRec.paidHours;
+        const reg = Decimal.min(paid, payrollConfig.dailyRegularLimit);
+        const ot = Decimal.min(Decimal.max(paid.minus(payrollConfig.dailyRegularLimit), 0), payrollConfig.dailyOvertimeLimit);
+        const dbl = Decimal.max(paid.minus(D(payrollConfig.dailyRegularLimit).plus(payrollConfig.dailyOvertimeLimit)), 0);
+        payrollEntry.regularHours += reg.toNumber();
+        payrollEntry.otHours += ot.toNumber();
+        payrollEntry.doubleHours += dbl.toNumber();
+        payrollEntry.dates.push(dateStr);
+        autoFilledDays.push({ employeeName: w.employeeName, date: dateStr, paidHours: paid, regularHours: reg, otHours: ot, doubleHours: dbl });
+      });
     });
 
     const classifications = detectJobClassifications(records, payrollConfig);
-    let payroll = calculatePayroll(inScope, ratios, hourlyRatesConfig, payrollConfig, classifications, weeklyPayrollMap, weekStart);
+    let payroll = calculatePayroll(inScope, ratios, hourlyRatesConfig, payrollConfig, classifications, workingPayrollMap, weekStart);
     payroll = calculateTax(payroll, payrollConfig.employerTax || {});
     payroll = calculateWorkersComp(payroll, payrollConfig.workersComp || {});
     const invoice = calculateInvoice(payroll, payrollConfig);
     invoice.excludedFromScope = excludedFromScope;
+    invoice.autoFilledDays = autoFilledDays;
 
     invoice.employees.forEach((row) => {
       if (row.errors.includes('MISSING_HOURLY_RATE')) validationErrors.push({ type: 'MISSING_HOURLY_RATE', message: `Missing hourly rate for ${row.employeeName}` });
@@ -1116,6 +1158,13 @@ function generateExcelWorkbook(result, hourlyRatesConfig, payrollConfig) {
   nc.addRow([]);
   if (classifiedExcluded.length) nc.addRow([`** Excluded from Clubhouse billing by job-code classification (payroll_config.json jobClassifications, excludeFromClubhouse: true) — shown here for audit only: ${classifiedExcluded.join(', ')}`]);
   if (excludedFromScope.length) nc.addRow([`** Had Clubhouse/BluntD/Crysp hours this week but are calculated in a separate payroll process (payroll_config.json clubhouseExclusions) — not billed here: ${excludedFromScope.join(', ')}`]);
+  const autoFilledDays = inv.autoFilledDays || [];
+  if (autoFilledDays.length) {
+    nc.addRow([`** ${autoFilledDays.length} day(s) missing from the uploaded weekly payroll sheet were auto-filled from the timesheet using the payroll workbook's own daily formula (Regular=MIN(paid,dailyRegularLimit), OT=next up to dailyOvertimeLimit, Double=beyond that) — every other day for these employees came straight from the uploaded sheet, unchanged:`]);
+    autoFilledDays.forEach((a) => {
+      nc.addRow([`   ${a.employeeName}, ${a.date}: paid ${num(a.paidHours).toFixed(2)} hrs → Regular ${num(a.regularHours).toFixed(2)}, OT ${num(a.otHours).toFixed(2)}, Double ${num(a.doubleHours).toFixed(2)}`]);
+    });
+  }
   nc.views = [{ state: 'frozen', ySplit: 3 }]; autoFitColumns(nc);
 
   // Hourly Rates
@@ -1183,11 +1232,17 @@ const fmtHours = (n) => Number(n).toFixed(2);
 function renderValidation(result) {
   const slot = $('validationSlot');
   if (!result) { slot.innerHTML = ''; return; }
+  const autoFilled = (result.invoice && result.invoice.autoFilledDays) || [];
+  const dailyLimit = CONFIG && CONFIG.payrollConfig ? CONFIG.payrollConfig.dailyRegularLimit : 8;
+  const otLimit = CONFIG && CONFIG.payrollConfig ? CONFIG.payrollConfig.dailyOvertimeLimit : 4;
+  const autoFillNote = autoFilled.length
+    ? `<div class="banner warn"><div><div class="title">${autoFilled.length} day(s) auto-filled from the timesheet</div>The weekly payroll sheet was missing these employee/date rows entirely, so Regular/OT/Double for just that day were computed from the timesheet's paid hours using the same daily formula the payroll workbook itself uses (Regular = MIN(paid, ${dailyLimit}), OT = next up to ${otLimit} hrs, Double = anything beyond). Every other day for these employees still comes straight from the uploaded payroll sheet, unchanged.<ul>${autoFilled.map((a) => `<li>${a.employeeName}, ${a.date}: paid ${fmtHours(a.paidHours)} hrs → Regular ${fmtHours(a.regularHours)}, OT ${fmtHours(a.otHours)}, Double ${fmtHours(a.doubleHours)}</li>`).join('')}</ul></div></div>`
+    : '';
   if (result.canGenerate) {
-    slot.innerHTML = `<div class="banner ok"><div><div class="title">Ready</div>All rows validated — hourly rates, tax and workers' comp configuration are complete for every employee found.</div></div>`;
+    slot.innerHTML = `<div class="banner ok"><div><div class="title">Ready</div>All rows validated — hourly rates, tax and workers' comp configuration are complete for every employee found.</div></div>${autoFillNote}`;
   } else {
     const items = result.validationErrors.map((e) => `<li>${e.message}</li>`).join('');
-    slot.innerHTML = `<div class="banner err"><div><div class="title">Cannot generate — ${result.validationErrors.length} issue(s) found</div><ul>${items}</ul></div></div>`;
+    slot.innerHTML = `<div class="banner err"><div><div class="title">Cannot generate — ${result.validationErrors.length} issue(s) found</div><ul>${items}</ul></div></div>${autoFillNote}`;
   }
 }
 
