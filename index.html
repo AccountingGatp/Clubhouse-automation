@@ -300,10 +300,10 @@
 
   <!-- Upload -->
   <section class="card" id="uploadCard">
-    <h2>Upload weekly timesheet</h2>
+    <h2>1. Upload weekly timesheet</h2>
     <label class="dropzone" id="dropzone" for="fileInput">
       <div class="label" id="dropLabel">Drop the timesheet CSV here, or click to choose a file</div>
-      <div class="sub">QuickBooks Time / TSheets weekly export (.csv)</div>
+      <div class="sub">QuickBooks Time / TSheets weekly export (.csv) — used only for the Clubhouse/BluntD/Crysp entity ratio (from Jobcode1)</div>
       <input type="file" id="fileInput" accept=".csv,text/csv" />
     </label>
     <div class="upload-meta" id="uploadMeta" hidden>
@@ -311,6 +311,24 @@
       <div class="meta-tile"><div class="k">Detected week</div><div class="v" id="metaWeek">—</div></div>
       <div class="meta-tile"><div class="k">Employees</div><div class="v" id="metaEmployees">—</div></div>
     </div>
+
+    <h2 style="margin-top:22px;">2. Upload weekly payroll / week sheet</h2>
+    <p style="color:var(--text-muted); font-size:0.85rem; margin:4px 0 12px;">
+      Per the SOP, Regular and OT hours are copied from the weekly payroll sheet, not calculated from
+      the timesheet. Upload a CSV or Excel file with a header row containing an employee name column
+      (e.g. "Employee" or "Name") and Regular/OT hours columns (e.g. "Regular Hours", "OT Hours").
+    </p>
+    <label class="dropzone" id="dropzonePayroll" for="payrollFileInput">
+      <div class="label" id="dropLabelPayroll">Drop the weekly payroll file here, or click to choose a file</div>
+      <div class="sub">CSV or Excel (.xlsx) — Employee, Regular Hours, OT Hours</div>
+      <input type="file" id="payrollFileInput" accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+    </label>
+    <div class="upload-meta" id="payrollUploadMeta" hidden>
+      <div class="meta-tile"><div class="k">File</div><div class="v" id="metaPayrollFile">—</div></div>
+      <div class="meta-tile"><div class="k">Employees found</div><div class="v" id="metaPayrollEmployees">—</div></div>
+    </div>
+    <div id="payrollFileError" style="display:none;"></div>
+
     <div class="row-actions" style="margin-top:16px;">
       <button class="primary" id="processBtn" disabled>Process timesheet</button>
       <button class="ghost" id="downloadBtn" disabled>Download Excel workbook</button>
@@ -416,30 +434,16 @@
         </div>
 
         <div>
-          <h3 style="font-family:inherit;font-size:1rem;">Clubhouse team roster</h3>
-          <p style="color:var(--text-muted); font-size:0.82rem; margin:4px 0 8px;">
-            Per the team's SOP, this list — not each employee's computed Clubhouse ratio — decides who
-            appears as a row in the NewClubhouse sheet each week. A roster member with 0% Clubhouse
-            hours that week still gets a $0 row (for audit continuity); anyone not on this list never
-            appears on the report, even if a job code happens to touch Clubhouse/BluntD/Crysp. Keep this
-            list updated as the team changes. If left empty, the app falls back to automatic detection
-            (billable ratio or a matching job classification) as a default.
-          </p>
-          <div class="tag-list" id="rosterTags"></div>
-          <div class="row-actions" style="margin-top:8px;">
-            <input type="text" id="newRoster" placeholder="Employee full name" style="max-width:220px;">
-            <button class="ghost small" id="addRoster">Add</button>
-          </div>
-        </div>
-
-        <div>
           <h3 style="font-family:inherit;font-size:1rem;">Clubhouse billing exclusions</h3>
           <p style="color:var(--text-muted); font-size:0.82rem; margin:4px 0 8px;">
-            Roster members whose pay for this period is calculated in a separate process and must not be
-            billed here (e.g. Hazel Herrera / Paul Bates / Elysia Castro per the current SOP). This is a
-            manual, name-based list, independent of any job-code classification — a special workers'
-            comp rate (below) does not by itself exclude anyone. Employees listed here are omitted from
-            the NewClubhouse rows entirely (shown in a footnote instead) and never affect the subtotal.
+            Per the SOP: employees whose pay for this period is calculated in a separate process and must
+            not be billed here (currently Hazel Herrera and Paul Bates). This is the ONLY thing that
+            removes an employee from the Clubhouse calculation — who's in scope otherwise is decided
+            purely by the timesheet's own Jobcode1 data (anyone with Clubhouse/BluntD/Crysp hours that
+            week), never by a roster or a job classification. This is a manual, name-based list,
+            independent of job-code classification — a special workers' comp rate (below) does not by
+            itself exclude anyone. Employees listed here are omitted from the NewClubhouse rows entirely
+            (shown in a footnote instead) and never affect the subtotal.
           </p>
           <div class="tag-list" id="exclusionTags"></div>
           <div class="row-actions" style="margin-top:8px;">
@@ -608,26 +612,31 @@ const Engine = (function () {
     return { employees: Array.from(names).sort((a, b) => a.localeCompare(b)), weekStart: sorted[0] || null, weekEnd: sorted[sorted.length - 1] || null };
   }
 
-  // Every WORK row must resolve to exactly ONE billing entity:
-  //   0 matches -> UNMAPPED  (blocks: "Unmapped Job Code")
-  //   >1 matches -> AMBIGUOUS (blocks: "Ambiguous Job Code")
-  //   1 match   -> OK, hours go to that one entity only
-  // This prevents the same source hours ever being allocated to more than
-  // one entity (e.g. a job code hierarchy that happens to contain both
-  // "Clubhouse" and "BluntD").
+  // Per the team's SOP: entity mapping uses Jobcode1 ONLY (the SOP
+  // explicitly filters/pivots on Jobcode1 for BluntD/Clubhouse/Crysp).
+  // Jobcode2 and Jobcode3 are never used to allocate entity hours — they
+  // still travel through to the Data / Daily OT Audit sheets for context.
+  //   0 matches  -> UNMAPPED: this row's job code is outside
+  //                 Clubhouse/BluntD/Crysp (e.g. "RSC", "Warehouse").
+  //                 Per the SOP this is simply filtered out of the entity
+  //                 pivot — NOT an error — the hours just don't count
+  //                 toward any entity's ratio.
+  //   >1 matches -> AMBIGUOUS: Jobcode1 itself matches more than one
+  //                 entity's keywords at once (a real config problem,
+  //                 since Jobcode1 is a single value) — blocks generation
+  //                 so hours are never allocated to more than one entity.
+  //   1 match    -> OK, hours go to that one entity.
   function classifyJobCodes(record, config) {
-    const codesLower = [record.jobcode1, record.jobcode2, record.jobcode3].map((c) => (c || '').toLowerCase());
-    const combined = codesLower.join(' ');
+    const j1 = (record.jobcode1 || '').toLowerCase();
     const restKeywords = (config.breakKeywords && config.breakKeywords.rest) || ['rest break'];
     const lunchKeywords = (config.breakKeywords && config.breakKeywords.lunch) || ['lunch break'];
-    const j1 = codesLower[0];
     if (restKeywords.some((k) => j1 === k.toLowerCase())) return { rowType: 'REST', entities: [], status: 'OK' };
     if (lunchKeywords.some((k) => j1 === k.toLowerCase())) return { rowType: 'LUNCH', entities: [], status: 'OK' };
     const entities = [];
     const entityKeywords = config.entityKeywords || {};
     Object.keys(entityKeywords).forEach((entityName) => {
       const keywords = entityKeywords[entityName] || [];
-      if (keywords.some((k) => combined.includes(k.toLowerCase()))) entities.push(entityName);
+      if (keywords.some((k) => j1.includes(k.toLowerCase()))) entities.push(entityName);
     });
     const status = entities.length === 0 ? 'UNMAPPED' : entities.length > 1 ? 'AMBIGUOUS' : 'OK';
     return { rowType: 'WORK', entities, status };
@@ -724,10 +733,16 @@ const Engine = (function () {
     return byEmployee;
   }
 
-  function calculatePayroll(weeklyRows, ratioRows, hourlyRatesConfig, payrollConfig, classifications) {
+  // Per the SOP: Regular and OT hours are NOT computed from the daily
+  // timesheet for billing — they're copied from the separate weekly
+  // payroll/week sheet (the second upload). weeklyPayrollMap is keyed by
+  // lowercased trimmed employee name -> { regularHours, otHours }. An
+  // in-scope employee missing from that sheet blocks generation
+  // (MISSING_WEEKLY_HOURS) rather than falling back to a computed guess.
+  function calculatePayroll(weeklyRows, ratioRows, hourlyRatesConfig, payrollConfig, classifications, weeklyPayrollMap) {
     const ratioByName = new Map(ratioRows.map((r) => [r.employeeName, r]));
-    const manualExclusions = new Set((payrollConfig.clubhouseExclusions || []).map((n) => n.trim().toLowerCase()));
     classifications = classifications || new Map();
+    weeklyPayrollMap = weeklyPayrollMap || new Map();
     // overtimeMultiplier is required config (validated upstream); fallback
     // here only keeps the preview from crashing while generation is blocked.
     const overtimeMultiplier = payrollConfig.overtimeMultiplier !== undefined && payrollConfig.overtimeMultiplier !== null ? payrollConfig.overtimeMultiplier : 1.5;
@@ -735,22 +750,40 @@ const Engine = (function () {
       const ratioInfo = ratioByName.get(w.employeeName);
       const hourlyRate = getEmployeeHourlyRate(w.employeeName, hourlyRatesConfig);
       const classification = classifications.get(w.employeeName) || null;
-      // Excluded from Clubhouse billing if named on the manual override
-      // list, OR because their job-code classification explicitly says
-      // excludeFromClubhouse: true — a WC-rate classification alone does
-      // NOT exclude anyone unless configuration says so.
-      const isExcluded = manualExclusions.has(w.employeeName.trim().toLowerCase()) || !!(classification && classification.excludeFromClubhouse);
-      const result = { employeeName: w.employeeName, workHours: w.workHours, restHours: w.restHours, lunchHours: w.lunchHours, paidHours: w.paidHours, regularHours: w.regularHours, otHours: w.otHours, clubhouseRatio: ratioInfo ? ratioInfo.clubhouseRatio : D(0), entityHours: w.entityHours, hourlyRate, classification, isExcluded, errors: [] };
-      if (hourlyRate === null || hourlyRate === undefined) { result.errors.push('MISSING_HOURLY_RATE'); result.status = 'Missing Hourly Rate'; return result; }
+      const payrollEntry = weeklyPayrollMap.get(w.employeeName.trim().toLowerCase());
+      // Clubhouse-exclusion SCOPE (e.g. Hazel/Paul) is decided upstream in
+      // runPipeline via payrollConfig.clubhouseExclusions — those employees
+      // never reach this function at all. A job classification can still
+      // zero an in-scope employee's bill via excludeFromClubhouse,
+      // independently of its wcRate, only if configuration explicitly says
+      // so — never automatically.
+      const isExcluded = !!(classification && classification.excludeFromClubhouse);
+      const result = {
+        employeeName: w.employeeName,
+        // Informational only (Daily OT Audit sheet) — computed from the
+        // timesheet, NOT used for billing amounts below.
+        workHours: w.workHours, restHours: w.restHours, lunchHours: w.lunchHours, paidHours: w.paidHours,
+        clubhouseRatio: ratioInfo ? ratioInfo.clubhouseRatio : D(0), entityHours: w.entityHours,
+        hourlyRate, classification, isExcluded, errors: [],
+      };
+      if (hourlyRate === null || hourlyRate === undefined) result.errors.push('MISSING_HOURLY_RATE');
+      if (!payrollEntry) result.errors.push('MISSING_WEEKLY_HOURS');
+      if (result.errors.length) {
+        result.status = result.errors.includes('MISSING_HOURLY_RATE') ? 'Missing Hourly Rate' : 'Missing Regular/OT Hours';
+        result.regularHours = D(0); result.otHours = D(0);
+        return result;
+      }
+      const regularHours = D(payrollEntry.regularHours);
+      const otHours = D(payrollEntry.otHours);
       const effectiveRatio = isExcluded ? D(0) : result.clubhouseRatio;
-      const clubhouseRegularHours = w.regularHours.times(effectiveRatio);
-      const clubhouseOtHours = w.otHours.times(effectiveRatio);
+      const clubhouseRegularHours = regularHours.times(effectiveRatio);
+      const clubhouseOtHours = otHours.times(effectiveRatio);
       const regularRate = D(hourlyRate);
       const otRate = regularRate.times(overtimeMultiplier);
       const regularGross = clubhouseRegularHours.times(regularRate);
       const otGross = clubhouseOtHours.times(otRate);
       const totalGross = regularGross.plus(otGross);
-      Object.assign(result, { clubhouseRegularHours, clubhouseOtHours, regularRate, otRate, regularGross, otGross, totalGross, status: 'OK' });
+      Object.assign(result, { regularHours, otHours, clubhouseRegularHours, clubhouseOtHours, regularRate, otRate, regularGross, otGross, totalGross, status: 'OK' });
       return result;
     });
   }
@@ -820,9 +853,12 @@ const Engine = (function () {
     return errs;
   }
 
-  function runPipeline(csvRows, hourlyRatesConfig, payrollConfig) {
+  function runPipeline(csvRows, hourlyRatesConfig, payrollConfig, weeklyPayrollMap) {
     const validationErrors = [];
     validatePayrollConfig(payrollConfig).forEach((e) => validationErrors.push(e));
+    if (!weeklyPayrollMap || !weeklyPayrollMap.size) {
+      validationErrors.push({ type: 'MISSING_WEEKLY_PAYROLL_FILE', message: 'No weekly payroll / week sheet uploaded — Regular and OT hours must come from that file, per the SOP, not be calculated from the timesheet.' });
+    }
 
     const { records: rawRecords, errors: parseErrors } = parseTimesheet(csvRows);
     const { records, duplicates } = detectDuplicateRows(rawRecords);
@@ -838,20 +874,44 @@ const Engine = (function () {
       }
     }
 
-    const { daily, unmappedRows, ambiguousRows } = calculateDailyHours(records, payrollConfig);
-    unmappedRows.forEach((r) => validationErrors.push({ type: 'UNMAPPED_JOB_CODE', message: `Row ${r.line} (${r.employee}, ${r.date}): job codes "${[r.jobcode1, r.jobcode2, r.jobcode3].filter(Boolean).join(' / ')}" did not match any billing entity.` }));
-    ambiguousRows.forEach((r) => validationErrors.push({ type: 'AMBIGUOUS_JOB_CODE', message: `Row ${r.line} (${r.employee}, ${r.date}): job codes "${[r.jobcode1, r.jobcode2, r.jobcode3].filter(Boolean).join(' / ')}" matched more than one billing entity (${r.matches.join(', ')}) — cannot allocate hours to a single entity.` }));
+    // unmappedRows (Jobcode1 outside Clubhouse/BluntD/Crysp, e.g. "RSC") are
+    // expected per the SOP — simply filtered out of the entity pivot, not
+    // an error. Only a row whose Jobcode1 matches more than one entity at
+    // once blocks generation (a genuine config problem).
+    const { daily, ambiguousRows } = calculateDailyHours(records, payrollConfig);
+    ambiguousRows.forEach((r) => validationErrors.push({ type: 'AMBIGUOUS_JOB_CODE', message: `Row ${r.line} (${r.employee}, ${r.date}): Jobcode1 "${r.jobcode1}" matched more than one billing entity (${r.matches.join(', ')}) — cannot allocate hours to a single entity.` }));
 
     const weekly = calculateWeeklyHours(daily);
     const ratios = calculateEntityRatios(weekly, payrollConfig);
+    const ratioByName = new Map(ratios.map((r) => [r.employeeName, r]));
+
+    // Clubhouse calculation scope, per the SOP: exactly the employees the
+    // week's Clubhouse/BluntD/Crysp pivot produced (any Jobcode1 hours in
+    // one of those three entities), minus the manually-excluded names in
+    // payrollConfig.clubhouseExclusions (calculated in a separate payroll
+    // process, e.g. Hazel Herrera and Paul Bates). No team roster and no
+    // job classification decides who's in scope — only the timesheet's own
+    // Jobcode1 data and this one manual exclusion list.
+    const exclusionSet = new Set((payrollConfig.clubhouseExclusions || []).map((n) => n.trim().toLowerCase()));
+    const inScope = [];
+    const excludedFromScope = [];
+    weekly.forEach((w) => {
+      const r = ratioByName.get(w.employeeName);
+      if (!r || !r.totalEntityHours.gt(0)) return; // no Clubhouse/BluntD/Crysp hours at all this week — out of scope
+      if (exclusionSet.has(w.employeeName.trim().toLowerCase())) { excludedFromScope.push(w.employeeName); return; }
+      inScope.push(w);
+    });
+
     const classifications = detectJobClassifications(records, payrollConfig);
-    let payroll = calculatePayroll(weekly, ratios, hourlyRatesConfig, payrollConfig, classifications);
+    let payroll = calculatePayroll(inScope, ratios, hourlyRatesConfig, payrollConfig, classifications, weeklyPayrollMap);
     payroll = calculateTax(payroll, payrollConfig.employerTax || {});
     payroll = calculateWorkersComp(payroll, payrollConfig.workersComp || {});
     const invoice = calculateInvoice(payroll, payrollConfig);
+    invoice.excludedFromScope = excludedFromScope;
 
     invoice.employees.forEach((row) => {
       if (row.errors.includes('MISSING_HOURLY_RATE')) validationErrors.push({ type: 'MISSING_HOURLY_RATE', message: `Missing hourly rate for ${row.employeeName}` });
+      if (row.errors.includes('MISSING_WEEKLY_HOURS')) validationErrors.push({ type: 'MISSING_WEEKLY_HOURS', message: `No Regular/OT hours found for ${row.employeeName} in the uploaded weekly payroll sheet.` });
       if (row.errors.includes('MISSING_TAX_RATE')) validationErrors.push({ type: 'MISSING_TAX_RATE', message: `Missing employer tax rate for ${row.employeeName}` });
       if (row.errors.includes('MISSING_WC_RATE')) validationErrors.push({ type: 'MISSING_WC_RATE', message: `Missing workers' comp rate for ${row.employeeName}` });
     });
@@ -924,40 +984,22 @@ function generateExcelWorkbook(result, hourlyRatesConfig, payrollConfig) {
   data.views = [{ state: 'frozen', ySplit: 1 }]; autoFitColumns(data);
 
   // NewClubhouse
-  // Per the team's actual SOP: which employees appear as a row here is
-  // decided by clubhouseTeamRoster (a maintained name list — data, not
-  // logic), NOT by each employee's computed Clubhouse ratio. A roster
-  // member with 0% Clubhouse hours that week still gets a $0 row (for
-  // audit continuity, exactly like the reference output); anyone not on
-  // the roster is out of scope for this report even if a job code happens
-  // to touch Clubhouse/BluntD/Crysp. Among roster members:
-  //   - Shown normally: billed from the Clubhouse subtotal per their
-  //     computed ratio (which may correctly be $0).
-  //   - Omitted (with a footnote instead of a row): on clubhouseExclusions
-  //     — calculated in a separate payroll process, purely a manual
-  //     name-based list, independent of any job-code classification.
-  // If clubhouseTeamRoster is left empty, the app falls back to automatic
-  // detection (billable Clubhouse ratio, a matching job classification, or
-  // a manual exclusion) so it still produces something useful without a
-  // maintained roster.
+  // Per the SOP: who appears here is already decided upstream in
+  // Engine.runPipeline — exactly the employees the week's timesheet
+  // actually produced Clubhouse/BluntD/Crysp hours for (via Jobcode1),
+  // minus payrollConfig.clubhouseExclusions (calculated in a separate
+  // payroll process, e.g. Hazel Herrera / Paul Bates). No team roster and
+  // no job classification decides this scope. inv.employees IS that
+  // already-scoped list — a roster member (or non-member) never changes
+  // what shows here. A classification can still zero an in-scope
+  // employee's bill (isExcluded / "Status" column) without removing their
+  // row, only if configuration explicitly says so.
   const nc = wb.addWorksheet('NewClubhouse');
   nc.getCell('A1').value = 'Clubhouse Billing Ratio & Payroll'; nc.getCell('A1').font = { bold: true, size: 12 };
   nc.addRow([]);
 
-  const roster = (payrollConfig.clubhouseTeamRoster || []).map((n) => n.trim().toLowerCase());
-  const rosterSet = new Set(roster);
-  const reportRows = inv.employees.filter((e) => {
-    if (e.errors.length) return false;
-    const nameLower = e.employeeName.trim().toLowerCase();
-    if (rosterSet.size) return rosterSet.has(nameLower) && !e.isExcluded;
-    // No roster configured — fall back to automatic detection.
-    const billable = !e.isExcluded && e.clubhouseRatio.gt(0);
-    return billable || !!e.classification;
-  }).sort((a, b) => {
-    const ra = rosterSet.size ? roster.indexOf(a.employeeName.trim().toLowerCase()) : 999;
-    const rb = rosterSet.size ? roster.indexOf(b.employeeName.trim().toLowerCase()) : 999;
-    return ra - rb || a.employeeName.localeCompare(b.employeeName);
-  });
+  const reportRows = inv.employees.filter((e) => !e.errors.length)
+    .sort((a, b) => a.employeeName.localeCompare(b.employeeName));
 
   const ratioHeader = nc.addRow(['Employee', 'Clubhouse Hrs', 'BluntD Hrs', 'Crysp Hrs', 'Total Entity Hrs', 'Clubhouse Ratio']);
   styleHeaderRow(ratioHeader);
@@ -979,9 +1021,6 @@ function generateExcelWorkbook(result, hourlyRatesConfig, payrollConfig) {
     [8, 9, 10, 12, 14, 15].forEach((c) => (row.getCell(c).numFmt = currencyFmt));
     row.getCell(13).numFmt = '0.0000'; borderRow(row);
   });
-  // Totals always sum ALL employees (not just reportRows), so the dollar
-  // amount is correct even if the roster is stale or someone is missing
-  // from it — the roster only controls which rows are *listed* above.
   const sumField = (field) => inv.employees.reduce((s, e) => (e.errors.length ? s : s + num(e[field])), 0);
   const totalRow = nc.addRow(['Total', '', '', '', '', '', '', sumField('regularGross'), sumField('otGross'), sumField('totalGross'), '', sumField('employerTax'), '', sumField('wcAmount'), num(inv.clubhouseSubtotal), '']);
   totalRow.eachCell((c) => { c.font = { bold: true }; c.fill = SUBTOTAL_FILL; c.border = THIN_BORDER; });
@@ -993,14 +1032,10 @@ function generateExcelWorkbook(result, hourlyRatesConfig, payrollConfig) {
   finalRow.getCell(15).value = num(inv.finalAmount); finalRow.getCell(15).numFmt = currencyFmt;
   finalRow.eachCell((c) => { c.fill = FINAL_FILL; c.font = { bold: true, size: 12 }; c.border = THIN_BORDER; });
   const classifiedExcluded = inv.employees.filter((e) => !e.errors.length && e.classification && e.classification.excludeFromClubhouse).map((e) => `${e.employeeName} (${e.classification.keyword})`);
-  const manuallyExcludedOnRoster = inv.employees.filter((e) => !e.errors.length && rosterSet.has(e.employeeName.trim().toLowerCase()) && e.isExcluded).map((e) => e.employeeName);
-  const notOnRoster = rosterSet.size ? inv.employees.filter((e) => !e.errors.length && !rosterSet.has(e.employeeName.trim().toLowerCase())).map((e) => e.employeeName) : [];
-  const omittedNoRosterMode = rosterSet.size ? [] : inv.employees.filter((e) => !e.errors.length && !reportRows.includes(e)).map((e) => e.employeeName);
+  const excludedFromScope = inv.excludedFromScope || [];
   nc.addRow([]);
   if (classifiedExcluded.length) nc.addRow([`** Excluded from Clubhouse billing by job-code classification (payroll_config.json jobClassifications, excludeFromClubhouse: true) — shown here for audit only: ${classifiedExcluded.join(', ')}`]);
-  if (manuallyExcludedOnRoster.length) nc.addRow([`** On the Clubhouse team roster but calculated in a separate payroll process (payroll_config.json clubhouseExclusions) — not billed here: ${manuallyExcludedOnRoster.join(', ')}`]);
-  if (notOnRoster.length) nc.addRow([`** Not on the Clubhouse team roster (payroll_config.json clubhouseTeamRoster) — out of scope for this report; see Data / Daily OT Audit for their full hours: ${notOnRoster.join(', ')}`]);
-  if (omittedNoRosterMode.length) nc.addRow([`** Not shown above (no Clubhouse work, no matching job classification) — see Data / Daily OT Audit for their full hours: ${omittedNoRosterMode.join(', ')}`]);
+  if (excludedFromScope.length) nc.addRow([`** Had Clubhouse/BluntD/Crysp hours this week but are calculated in a separate payroll process (payroll_config.json clubhouseExclusions) — not billed here: ${excludedFromScope.join(', ')}`]);
   nc.views = [{ state: 'frozen', ySplit: 3 }]; autoFitColumns(nc);
 
   // Hourly Rates
@@ -1121,7 +1156,7 @@ function renderEmployeeTable(result) {
 
 function processFile(rows, filename) {
   if (!CONFIG) return; // Configuration Missing — blocked in init()
-  const result = Engine.runPipeline(rows, CONFIG.hourlyRates, CONFIG.payrollConfig);
+  const result = Engine.runPipeline(rows, CONFIG.hourlyRates, CONFIG.payrollConfig, PARSED_WEEKLY_PAYROLL);
   CURRENT_RESULT = result;
   CURRENT_FILENAME = filename;
   renderValidation(result);
@@ -1132,6 +1167,11 @@ function processFile(rows, filename) {
 }
 
 let PARSED_ROWS = null;
+let PARSED_WEEKLY_PAYROLL = null; // Map(lowercased trimmed name -> {employeeName, regularHours, otHours})
+
+function maybeEnableProcess() {
+  $('processBtn').disabled = !CONFIG || !PARSED_ROWS || !PARSED_WEEKLY_PAYROLL || !PARSED_WEEKLY_PAYROLL.size;
+}
 
 function handleFile(file) {
   if (!file || !CONFIG) return; // Configuration Missing — blocked in init()
@@ -1144,10 +1184,90 @@ function handleFile(file) {
     $('metaWeek').textContent = weekStart && weekEnd ? `${weekStart} → ${weekEnd}` : '—';
     $('metaEmployees').textContent = employees.length;
     $('uploadMeta').hidden = false;
-    $('processBtn').disabled = false;
     $('dropLabel').textContent = 'File loaded — choose again to replace';
+    maybeEnableProcess();
   };
   reader.readAsText(file);
+}
+
+/* ---- Weekly payroll / week sheet (Regular & OT hours source) ---- */
+const WEEKLY_PAYROLL_NAME_HEADERS = ['employee', 'employee name', 'name', 'fullname', 'full name'];
+const WEEKLY_PAYROLL_REGULAR_HEADERS = ['regular hours', 'regular hr', 'regular hrs', 'regular', 'reg hours', 'reg hr', 'reg'];
+const WEEKLY_PAYROLL_OT_HEADERS = ['ot hours', 'ot hr', 'ot hrs', 'ot', 'overtime', 'overtime hours', 'overtime hr'];
+const normHeader = (h) => (h === null || h === undefined ? '' : String(h)).trim().toLowerCase();
+
+// objRows: array of plain objects keyed by header text (from Papa.parse
+// {header:true} for CSV, or built below for XLSX). Detects the name /
+// regular / OT columns by common header spellings — never guesses values,
+// only which column holds them; if it can't find them, it reports exactly
+// that instead of silently parsing the wrong column.
+function parseWeeklyPayrollObjects(objRows) {
+  if (!objRows || !objRows.length) return { map: null, error: 'The file has no data rows.' };
+  const headers = Object.keys(objRows[0]);
+  const headerByNorm = {};
+  headers.forEach((h) => { headerByNorm[normHeader(h)] = h; });
+  const nameKey = WEEKLY_PAYROLL_NAME_HEADERS.map((h) => headerByNorm[h]).find(Boolean);
+  const fnameKey = headerByNorm['fname'] || headerByNorm['first name'];
+  const lnameKey = headerByNorm['lname'] || headerByNorm['last name'];
+  const regKey = WEEKLY_PAYROLL_REGULAR_HEADERS.map((h) => headerByNorm[h]).find(Boolean);
+  const otKey = WEEKLY_PAYROLL_OT_HEADERS.map((h) => headerByNorm[h]).find(Boolean);
+  if ((!nameKey && !(fnameKey && lnameKey)) || !regKey || !otKey) {
+    return { map: null, error: `Could not find the required columns. Found headers: ${headers.join(', ') || '(none)'}. Need an employee name column (e.g. "Employee" or "Name", or "fname"+"lname") and Regular/OT hours columns (e.g. "Regular Hours", "OT Hours").` };
+  }
+  const map = new Map();
+  objRows.forEach((row) => {
+    let name = nameKey ? String(row[nameKey] || '').trim() : `${String(row[fnameKey] || '').trim()} ${String(row[lnameKey] || '').trim()}`.trim();
+    if (!name) return;
+    const regular = Number(row[regKey]);
+    const ot = Number(row[otKey]);
+    map.set(name.toLowerCase(), { employeeName: name, regularHours: isNaN(regular) ? 0 : regular, otHours: isNaN(ot) ? 0 : ot });
+  });
+  return { map, error: map.size ? null : 'No employee rows could be read from the file.' };
+}
+
+async function parseWeeklyPayrollFile(file) {
+  const lower = file.name.toLowerCase();
+  if (lower.endsWith('.xlsx')) {
+    const buf = await file.arrayBuffer();
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buf);
+    const ws = wb.worksheets[0];
+    if (!ws) return { map: null, error: 'The Excel file has no worksheets.' };
+    let headers = [];
+    const objRows = [];
+    ws.eachRow((row, i) => {
+      const vals = row.values.slice(1);
+      if (i === 1) { headers = vals.map((v) => (v === null || v === undefined ? '' : String(v))); return; }
+      const obj = {};
+      headers.forEach((h, idx) => { obj[h] = vals[idx]; });
+      objRows.push(obj);
+    });
+    return parseWeeklyPayrollObjects(objRows);
+  }
+  const text = await file.text();
+  const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+  return parseWeeklyPayrollObjects(parsed.data);
+}
+
+function handlePayrollFile(file) {
+  if (!file || !CONFIG) return;
+  $('metaPayrollFile').textContent = file.name;
+  $('payrollFileError').style.display = 'none';
+  parseWeeklyPayrollFile(file).then(({ map, error }) => {
+    if (error) {
+      PARSED_WEEKLY_PAYROLL = null;
+      $('payrollUploadMeta').hidden = true;
+      $('payrollFileError').style.display = '';
+      $('payrollFileError').innerHTML = `<div class="banner err"><div><div class="title">Could not read weekly payroll file</div>${error}</div></div>`;
+      maybeEnableProcess();
+      return;
+    }
+    PARSED_WEEKLY_PAYROLL = map;
+    $('metaPayrollEmployees').textContent = map.size;
+    $('payrollUploadMeta').hidden = false;
+    $('dropLabelPayroll').textContent = 'File loaded — choose again to replace';
+    maybeEnableProcess();
+  });
 }
 
 /* Saves a file to disk. Inside the Claude Artifact viewer this goes through
@@ -1171,6 +1291,11 @@ $('fileInput').addEventListener('change', (e) => handleFile(e.target.files[0]));
 $('dropzone').addEventListener('dragover', (e) => { e.preventDefault(); $('dropzone').classList.add('drag'); });
 $('dropzone').addEventListener('dragleave', () => $('dropzone').classList.remove('drag'));
 $('dropzone').addEventListener('drop', (e) => { e.preventDefault(); $('dropzone').classList.remove('drag'); const f = e.dataTransfer.files[0]; if (f) { $('fileInput').files = e.dataTransfer.files; handleFile(f); } });
+
+$('payrollFileInput').addEventListener('change', (e) => handlePayrollFile(e.target.files[0]));
+$('dropzonePayroll').addEventListener('dragover', (e) => { e.preventDefault(); $('dropzonePayroll').classList.add('drag'); });
+$('dropzonePayroll').addEventListener('dragleave', () => $('dropzonePayroll').classList.remove('drag'));
+$('dropzonePayroll').addEventListener('drop', (e) => { e.preventDefault(); $('dropzonePayroll').classList.remove('drag'); const f = e.dataTransfer.files[0]; if (f) { $('payrollFileInput').files = e.dataTransfer.files; handlePayrollFile(f); } });
 
 $('processBtn').addEventListener('click', () => { if (PARSED_ROWS) processFile(PARSED_ROWS, $('metaFile').textContent); });
 
@@ -1215,15 +1340,6 @@ function renderRatesTable() {
   }));
   body.querySelectorAll('[data-remove]').forEach((b) => b.addEventListener('click', () => {
     CONFIG.hourlyRates.employees.splice(Number(b.dataset.remove), 1); renderRatesTable();
-  }));
-}
-
-function renderRosterTags() {
-  $('rosterTags').innerHTML = (CONFIG.payrollConfig.clubhouseTeamRoster || []).map((name, i) =>
-    `<span class="tag">${name}<button data-idx="${i}">&times;</button></span>`).join('')
-    || '<span style="color:var(--text-muted); font-size:0.82rem;">Empty — falls back to automatic (anyone with a Clubhouse ratio &gt; 0).</span>';
-  $('rosterTags').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
-    CONFIG.payrollConfig.clubhouseTeamRoster.splice(Number(b.dataset.idx), 1); renderRosterTags();
   }));
 }
 
@@ -1299,7 +1415,6 @@ function renderEntityKeywords() {
 function renderConfigPanel() {
   if (!CONFIG) return;
   renderRatesTable();
-  renderRosterTags();
   renderExclusionTags();
   renderOverrideTable('taxOverrideBody', CONFIG.payrollConfig.employerTax.overrides, 'tax', '0.0001');
   renderOverrideTable('wcOverrideBody', CONFIG.payrollConfig.workersComp.overrides, 'wc', '0.0001');
@@ -1321,10 +1436,6 @@ $('addJobClass').addEventListener('click', () => {
   while (CONFIG.payrollConfig.jobClassifications[key] !== undefined) { key = `new-keyword-${i++}`; }
   CONFIG.payrollConfig.jobClassifications[key] = { wcRate: null, excludeFromClubhouse: false };
   renderJobClassifications();
-});
-$('addRoster').addEventListener('click', () => {
-  const val = $('newRoster').value.trim();
-  if (val) { CONFIG.payrollConfig.clubhouseTeamRoster = CONFIG.payrollConfig.clubhouseTeamRoster || []; CONFIG.payrollConfig.clubhouseTeamRoster.push(val); $('newRoster').value = ''; renderRosterTags(); }
 });
 $('addExclusion').addEventListener('click', () => {
   const val = $('newExclusion').value.trim();
@@ -1371,7 +1482,10 @@ function setUploadEnabled(enabled) {
   $('fileInput').disabled = !enabled;
   $('dropzone').style.pointerEvents = enabled ? '' : 'none';
   $('dropzone').style.opacity = enabled ? '' : '0.5';
-  $('processBtn').disabled = !enabled || !PARSED_ROWS;
+  $('payrollFileInput').disabled = !enabled;
+  $('dropzonePayroll').style.pointerEvents = enabled ? '' : 'none';
+  $('dropzonePayroll').style.opacity = enabled ? '' : '0.5';
+  if (enabled) maybeEnableProcess(); else $('processBtn').disabled = true;
 }
 
 function showConfigMissing() {
