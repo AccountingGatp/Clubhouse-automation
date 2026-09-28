@@ -651,23 +651,43 @@ const Engine = (function () {
     records.forEach((r) => {
       const cls = classifyJobCodes(r, config);
       const key = `${r.employeeName}|${r.localDate}`;
-      if (!byEmpDay.has(key)) byEmpDay.set(key, { employeeName: r.employeeName, localDate: r.localDate, localDay: r.localDay, workHours: D(0), restHours: D(0), lunchHours: D(0), entityHours: {} });
+      if (!byEmpDay.has(key)) byEmpDay.set(key, { employeeName: r.employeeName, localDate: r.localDate, localDay: r.localDay, workHours: D(0), entityWorkHours: D(0), restHours: D(0), lunchHours: D(0), entityHours: {} });
       const acc = byEmpDay.get(key);
       const hrs = D(r.hours);
       if (cls.rowType === 'REST') acc.restHours = acc.restHours.plus(hrs);
       else if (cls.rowType === 'LUNCH') acc.lunchHours = acc.lunchHours.plus(hrs);
       else {
+        // workHours = ALL work time that day (incl. RSC/unmapped codes) —
+        // kept only for the informational Daily OT Audit sheet.
         acc.workHours = acc.workHours.plus(hrs);
-        if (cls.status === 'UNMAPPED') unmappedRows.push({ line: r.line, employee: r.employeeName, date: r.localDate, jobcode1: r.jobcode1, jobcode2: r.jobcode2, jobcode3: r.jobcode3 });
-        else if (cls.status === 'AMBIGUOUS') ambiguousRows.push({ line: r.line, employee: r.employeeName, date: r.localDate, jobcode1: r.jobcode1, jobcode2: r.jobcode2, jobcode3: r.jobcode3, matches: cls.entities });
-        else cls.entities.forEach((entityName) => { acc.entityHours[entityName] = (acc.entityHours[entityName] || D(0)).plus(hrs); });
+        if (cls.status === 'UNMAPPED') {
+          // RSC and similar out-of-entity job codes: real paid time, but
+          // NOT Clubhouse/BluntD/Crysp work. Deliberately excluded from
+          // entityWorkHours so it can never be billed to Clubhouse — per
+          // the SOP and HR's explicit instruction not to use RSC hours
+          // when picking/auto-filling Regular/OT hours for billing.
+          unmappedRows.push({ line: r.line, employee: r.employeeName, date: r.localDate, jobcode1: r.jobcode1, jobcode2: r.jobcode2, jobcode3: r.jobcode3 });
+        } else if (cls.status === 'AMBIGUOUS') {
+          ambiguousRows.push({ line: r.line, employee: r.employeeName, date: r.localDate, jobcode1: r.jobcode1, jobcode2: r.jobcode2, jobcode3: r.jobcode3, matches: cls.entities });
+        } else {
+          acc.entityWorkHours = acc.entityWorkHours.plus(hrs);
+          cls.entities.forEach((entityName) => { acc.entityHours[entityName] = (acc.entityHours[entityName] || D(0)).plus(hrs); });
+        }
       }
     });
     const daily = Array.from(byEmpDay.values()).map((acc) => {
+      // paidHours: ALL paid time that day (incl. RSC) — informational only
+      // (Daily OT Audit sheet), never used to compute a billable amount.
       const paidHours = acc.workHours.plus(acc.restHours);
+      // billablePaidHours: Clubhouse/BluntD/Crysp work + rest ONLY — RSC and
+      // any other unmapped job-code hours are excluded. This is the figure
+      // that must be used anywhere a Regular/OT/Double hours number can end
+      // up multiplied by the Clubhouse ratio and billed (i.e. the
+      // missing-day auto-fill in runPipeline).
+      const billablePaidHours = acc.entityWorkHours.plus(acc.restHours);
       const regularHours = Decimal.min(paidHours, dailyLimit);
       const otHours = Decimal.max(paidHours.minus(dailyLimit), 0);
-      return { employeeName: acc.employeeName, localDate: acc.localDate, localDay: acc.localDay, workHours: acc.workHours, restHours: acc.restHours, lunchHours: acc.lunchHours, paidHours, regularHours, otHours, entityHours: acc.entityHours };
+      return { employeeName: acc.employeeName, localDate: acc.localDate, localDay: acc.localDay, workHours: acc.workHours, entityWorkHours: acc.entityWorkHours, restHours: acc.restHours, lunchHours: acc.lunchHours, paidHours, billablePaidHours, regularHours, otHours, entityHours: acc.entityHours };
     });
     daily.sort((a, b) => a.employeeName.localeCompare(b.employeeName) || a.localDate.localeCompare(b.localDate));
     return { daily, unmappedRows, ambiguousRows };
@@ -964,7 +984,13 @@ const Engine = (function () {
           validationErrors.push({ type: 'WEEKLY_PAYROLL_DATE_GAP', message: `Weekly payroll sheet is missing ${w.employeeName} for ${dateStr}, and no timesheet hours were found for that date either — cannot auto-fill.` });
           return;
         }
-        const paid = dayRec.paidHours;
+        // Use billablePaidHours (Clubhouse/BluntD/Crysp work + rest ONLY),
+        // never paidHours — paidHours includes RSC and other unmapped
+        // job-code hours, which must never be auto-filled as Regular/OT and
+        // billed to Clubhouse via the ratio. A day that was pure RSC (e.g.
+        // billablePaidHours = 0) simply contributes zero here, exactly as
+        // it should.
+        const paid = dayRec.billablePaidHours;
         const reg = Decimal.min(paid, payrollConfig.dailyRegularLimit);
         const ot = Decimal.min(Decimal.max(paid.minus(payrollConfig.dailyRegularLimit), 0), payrollConfig.dailyOvertimeLimit);
         const dbl = Decimal.max(paid.minus(D(payrollConfig.dailyRegularLimit).plus(payrollConfig.dailyOvertimeLimit)), 0);
@@ -972,7 +998,7 @@ const Engine = (function () {
         payrollEntry.otHours += ot.toNumber();
         payrollEntry.doubleHours += dbl.toNumber();
         payrollEntry.dates.push(dateStr);
-        autoFilledDays.push({ employeeName: w.employeeName, date: dateStr, paidHours: paid, regularHours: reg, otHours: ot, doubleHours: dbl });
+        autoFilledDays.push({ employeeName: w.employeeName, date: dateStr, paidHours: paid, rawPaidHours: dayRec.paidHours, regularHours: reg, otHours: ot, doubleHours: dbl });
       });
     });
 
@@ -1139,7 +1165,8 @@ function generateExcelWorkbook(result, payrollConfig) {
   if (autoFilledDays.length) {
     nc.addRow([`** ${autoFilledDays.length} day(s) missing from the uploaded weekly payroll sheet were auto-filled from the timesheet using the payroll workbook's own daily formula (Regular=MIN(paid,dailyRegularLimit), OT=next up to dailyOvertimeLimit, Double=beyond that) — every other day for these employees came straight from the uploaded sheet, unchanged:`]);
     autoFilledDays.forEach((a) => {
-      nc.addRow([`   ${a.employeeName}, ${a.date}: paid ${num(a.paidHours).toFixed(2)} hrs → Regular ${num(a.regularHours).toFixed(2)}, OT ${num(a.otHours).toFixed(2)}, Double ${num(a.doubleHours).toFixed(2)}`]);
+      const rawNote = num(a.rawPaidHours) !== num(a.paidHours) ? ` (${num(a.rawPaidHours).toFixed(2)} hrs on the timesheet that day, incl. RSC/other non-Clubhouse job codes excluded from billing)` : '';
+      nc.addRow([`   ${a.employeeName}, ${a.date}: billable paid ${num(a.paidHours).toFixed(2)} hrs${rawNote} → Regular ${num(a.regularHours).toFixed(2)}, OT ${num(a.otHours).toFixed(2)}, Double ${num(a.doubleHours).toFixed(2)}`]);
     });
   }
   nc.views = [{ state: 'frozen', ySplit: 3 }]; autoFitColumns(nc);
