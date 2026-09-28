@@ -352,7 +352,7 @@
         <thead>
           <tr>
             <th>Employee</th><th>Work</th><th>Rest</th><th>Lunch</th><th>Paid</th>
-            <th>Regular</th><th>OT</th><th>Clubhouse Hrs</th><th>Ratio</th><th>Rate</th>
+            <th>Regular</th><th>OT</th><th>Double</th><th>Clubhouse Hrs</th><th>Ratio</th><th>Rate</th>
             <th>OT Rate</th><th>Reg Gross</th><th>OT Gross</th><th>Total Gross</th>
             <th>Emp. Tax</th><th>WC</th><th>Bill</th><th>Status</th>
           </tr>
@@ -698,9 +698,27 @@ const Engine = (function () {
     });
   }
 
-  function getEmployeeHourlyRate(employeeName, hourlyRatesConfig) {
+  // asOfDate (a 'YYYY-MM-DD' string, normally the timesheet's weekStart) is
+  // used only when the employee record has a rateHistory array — hourly
+  // rates can change over time, and the current hourly_rates.json value is
+  // not necessarily correct for an older uploaded week. When rateHistory is
+  // present, the matching entry (effectiveFrom <= asOfDate <= effectiveTo,
+  // either bound optional/open-ended) is used; if none matches (including
+  // when asOfDate is missing), this returns null rather than guessing,
+  // which surfaces as the existing MISSING_HOURLY_RATE block. When the
+  // employee has no rateHistory at all, the flat hourlyRate field is used
+  // as before (fully backward compatible).
+  function getEmployeeHourlyRate(employeeName, hourlyRatesConfig, asOfDate) {
     const found = (hourlyRatesConfig.employees || []).find((x) => x.name.trim().toLowerCase() === employeeName.trim().toLowerCase());
-    return found ? found.hourlyRate : null;
+    if (!found) return null;
+    if (!Array.isArray(found.rateHistory) || !found.rateHistory.length) return found.hourlyRate;
+    if (!asOfDate) return null;
+    const match = found.rateHistory.find((entry) => {
+      if (entry.effectiveFrom && asOfDate < entry.effectiveFrom) return false;
+      if (entry.effectiveTo && asOfDate > entry.effectiveTo) return false;
+      return true;
+    });
+    return match ? match.hourlyRate : null;
   }
 
   // Job-code-driven, no employee names involved: for each employee, look
@@ -739,7 +757,11 @@ const Engine = (function () {
   // lowercased trimmed employee name -> { regularHours, otHours }. An
   // in-scope employee missing from that sheet blocks generation
   // (MISSING_WEEKLY_HOURS) rather than falling back to a computed guess.
-  function calculatePayroll(weeklyRows, ratioRows, hourlyRatesConfig, payrollConfig, classifications, weeklyPayrollMap) {
+  // asOfDate (normally the timesheet's weekStart) is passed through to
+  // getEmployeeHourlyRate so an employee with an effective-dated
+  // rateHistory gets the rate that actually applied during this uploaded
+  // week, not just whatever hourly_rates.json's current flat value is.
+  function calculatePayroll(weeklyRows, ratioRows, hourlyRatesConfig, payrollConfig, classifications, weeklyPayrollMap, asOfDate) {
     const ratioByName = new Map(ratioRows.map((r) => [r.employeeName, r]));
     classifications = classifications || new Map();
     weeklyPayrollMap = weeklyPayrollMap || new Map();
@@ -748,7 +770,7 @@ const Engine = (function () {
     const overtimeMultiplier = payrollConfig.overtimeMultiplier !== undefined && payrollConfig.overtimeMultiplier !== null ? payrollConfig.overtimeMultiplier : 1.5;
     return weeklyRows.map((w) => {
       const ratioInfo = ratioByName.get(w.employeeName);
-      const hourlyRate = getEmployeeHourlyRate(w.employeeName, hourlyRatesConfig);
+      const hourlyRate = getEmployeeHourlyRate(w.employeeName, hourlyRatesConfig, asOfDate);
       const classification = classifications.get(w.employeeName) || null;
       const payrollEntry = weeklyPayrollMap.get(w.employeeName.trim().toLowerCase());
       // Clubhouse-exclusion SCOPE (e.g. Hazel/Paul) is decided upstream in
@@ -758,19 +780,27 @@ const Engine = (function () {
       // independently of its wcRate, only if configuration explicitly says
       // so — never automatically.
       const isExcluded = !!(classification && classification.excludeFromClubhouse);
+      const doubleHours = payrollEntry && payrollEntry.doubleHours ? D(payrollEntry.doubleHours) : D(0);
       const result = {
         employeeName: w.employeeName,
         // Informational only (Daily OT Audit sheet) — computed from the
         // timesheet, NOT used for billing amounts below.
         workHours: w.workHours, restHours: w.restHours, lunchHours: w.lunchHours, paidHours: w.paidHours,
         clubhouseRatio: ratioInfo ? ratioInfo.clubhouseRatio : D(0), entityHours: w.entityHours,
-        hourlyRate, classification, isExcluded, errors: [],
+        hourlyRate, classification, isExcluded, doubleHours, errors: [],
       };
       if (hourlyRate === null || hourlyRate === undefined) result.errors.push('MISSING_HOURLY_RATE');
       if (!payrollEntry) result.errors.push('MISSING_WEEKLY_HOURS');
+      // Double Hours are surfaced but never silently merged into OT or
+      // billed automatically — the Clubhouse SOP doesn't define how
+      // double-time should be billed, so generation is blocked for this
+      // employee until that's confirmed (per explicit instruction).
+      if (payrollEntry && doubleHours.gt(0)) result.errors.push('DOUBLE_HOURS_UNRESOLVED');
       if (result.errors.length) {
-        result.status = result.errors.includes('MISSING_HOURLY_RATE') ? 'Missing Hourly Rate' : 'Missing Regular/OT Hours';
-        result.regularHours = D(0); result.otHours = D(0);
+        if (result.errors.includes('DOUBLE_HOURS_UNRESOLVED')) result.status = 'Double-time hours found — Clubhouse billing treatment requires confirmation.';
+        else result.status = result.errors.includes('MISSING_HOURLY_RATE') ? 'Missing Hourly Rate' : 'Missing Regular/OT Hours';
+        result.regularHours = payrollEntry ? D(payrollEntry.regularHours) : D(0);
+        result.otHours = payrollEntry ? D(payrollEntry.otHours) : D(0);
         return result;
       }
       const regularHours = D(payrollEntry.regularHours);
@@ -903,7 +933,7 @@ const Engine = (function () {
     });
 
     const classifications = detectJobClassifications(records, payrollConfig);
-    let payroll = calculatePayroll(inScope, ratios, hourlyRatesConfig, payrollConfig, classifications, weeklyPayrollMap);
+    let payroll = calculatePayroll(inScope, ratios, hourlyRatesConfig, payrollConfig, classifications, weeklyPayrollMap, weekStart);
     payroll = calculateTax(payroll, payrollConfig.employerTax || {});
     payroll = calculateWorkersComp(payroll, payrollConfig.workersComp || {});
     const invoice = calculateInvoice(payroll, payrollConfig);
@@ -914,6 +944,7 @@ const Engine = (function () {
       if (row.errors.includes('MISSING_WEEKLY_HOURS')) validationErrors.push({ type: 'MISSING_WEEKLY_HOURS', message: `No Regular/OT hours found for ${row.employeeName} in the uploaded weekly payroll sheet.` });
       if (row.errors.includes('MISSING_TAX_RATE')) validationErrors.push({ type: 'MISSING_TAX_RATE', message: `Missing employer tax rate for ${row.employeeName}` });
       if (row.errors.includes('MISSING_WC_RATE')) validationErrors.push({ type: 'MISSING_WC_RATE', message: `Missing workers' comp rate for ${row.employeeName}` });
+      if (row.errors.includes('DOUBLE_HOURS_UNRESOLVED')) validationErrors.push({ type: 'DOUBLE_HOURS_UNRESOLVED', message: `Double-time hours found for ${row.employeeName} (${row.doubleHours ? row.doubleHours.toString() : '?'} hrs) — Clubhouse billing treatment requires confirmation.` });
     });
     return { weekStart, weekEnd, employees, records, daily, weekly, ratios, invoice, validationErrors, canGenerate: validationErrors.length === 0 };
   }
@@ -1121,7 +1152,8 @@ function renderEmployeeTable(result) {
   const rows = result.invoice.employees.map((e) => {
     const clubhouseHours = e.errors.length ? 0 : e.clubhouseRegularHours.plus(e.clubhouseOtHours);
     let statusPill;
-    if (e.errors.length) statusPill = `<span class="pill warn">${e.status}</span>`;
+    if (e.errors.includes('DOUBLE_HOURS_UNRESOLVED')) statusPill = `<span class="pill warn">Double-time — needs confirmation</span>`;
+    else if (e.errors.length) statusPill = `<span class="pill warn">${e.status}</span>`;
     else if (e.isExcluded && e.classification) statusPill = `<span class="pill muted">${e.classification.keyword} (excluded)</span>`;
     else if (e.isExcluded) statusPill = `<span class="pill muted">Excluded</span>`;
     else if (e.clubhouseRatio.gt(0)) statusPill = `<span class="pill ok">Billable</span>`;
@@ -1129,6 +1161,8 @@ function renderEmployeeTable(result) {
 
     const cell = (v, money) => (e.errors.length ? '—' : money ? fmtMoney(v) : fmtHours(v));
     const cls = e.isExcluded ? ' class="excluded"' : '';
+    const doubleCell = e.doubleHours && e.doubleHours.gt && e.doubleHours.gt(0)
+      ? `<span class="pill warn">${fmtHours(e.doubleHours)}</span>` : fmtHours(e.doubleHours || 0);
     return `<tr${cls}>
       <td>${e.employeeName}</td>
       <td class="num">${fmtHours(e.workHours)}</td>
@@ -1137,6 +1171,7 @@ function renderEmployeeTable(result) {
       <td class="num">${fmtHours(e.paidHours)}</td>
       <td class="num">${fmtHours(e.regularHours)}</td>
       <td class="num">${fmtHours(e.otHours)}</td>
+      <td class="num">${doubleCell}</td>
       <td class="num">${e.errors.length ? '—' : fmtHours(clubhouseHours)}</td>
       <td class="num">${e.errors.length ? '—' : e.clubhouseRatio.toString()}</td>
       <td class="num">${e.hourlyRate === null ? '—' : fmtMoney(e.hourlyRate)}</td>
@@ -1167,7 +1202,7 @@ function processFile(rows, filename) {
 }
 
 let PARSED_ROWS = null;
-let PARSED_WEEKLY_PAYROLL = null; // Map(lowercased trimmed name -> {employeeName, regularHours, otHours})
+let PARSED_WEEKLY_PAYROLL = null; // Map(lowercased trimmed name -> {employeeName, regularHours, otHours, doubleHours})
 
 function maybeEnableProcess() {
   $('processBtn').disabled = !CONFIG || !PARSED_ROWS || !PARSED_WEEKLY_PAYROLL || !PARSED_WEEKLY_PAYROLL.size;
@@ -1190,17 +1225,29 @@ function handleFile(file) {
   reader.readAsText(file);
 }
 
-/* ---- Weekly payroll / week sheet (Regular & OT hours source) ---- */
+/* ---- Weekly payroll / week sheet (Regular & OT & Double hours source) ---- */
 const WEEKLY_PAYROLL_NAME_HEADERS = ['employee', 'employee name', 'name', 'fullname', 'full name'];
 const WEEKLY_PAYROLL_REGULAR_HEADERS = ['regular hours', 'regular hr', 'regular hrs', 'regular', 'reg hours', 'reg hr', 'reg'];
 const WEEKLY_PAYROLL_OT_HEADERS = ['ot hours', 'ot hr', 'ot hrs', 'ot', 'overtime', 'overtime hours', 'overtime hr'];
+const WEEKLY_PAYROLL_DOUBLE_HEADERS = ['double hours', 'double hr', 'double hrs', 'double', 'dt hours', 'dt hr', 'dt'];
+// The real weekly payroll workbook's authoritative sheet is named exactly
+// this. Matched case-insensitively; falls back to the first worksheet only
+// if no sheet with this name exists, so older/differently-shaped files
+// still work.
+const WEEKLY_PAYROLL_SHEET_NAME = 'overtime calculation';
 const normHeader = (h) => (h === null || h === undefined ? '' : String(h)).trim().toLowerCase();
 
 // objRows: array of plain objects keyed by header text (from Papa.parse
 // {header:true} for CSV, or built below for XLSX). Detects the name /
-// regular / OT columns by common header spellings — never guesses values,
-// only which column holds them; if it can't find them, it reports exactly
-// that instead of silently parsing the wrong column.
+// regular / OT / double columns by common header spellings — never guesses
+// values, only which column holds them; if it can't find the required
+// ones, it reports exactly that instead of silently parsing the wrong
+// column. The "Overtime Calculation" sheet is DAILY granularity (one row
+// per employee per day), so rows are grouped by employee and Regular/OT/
+// Double hours are SUMMED across the week — never overwritten — per the
+// SOP's "group by employee, sum the hours" instruction. The already-
+// calculated Regular/OT/Double values in the sheet are read as-is; this
+// app never recomputes them.
 function parseWeeklyPayrollObjects(objRows) {
   if (!objRows || !objRows.length) return { map: null, error: 'The file has no data rows.' };
   const headers = Object.keys(objRows[0]);
@@ -1209,18 +1256,39 @@ function parseWeeklyPayrollObjects(objRows) {
   const nameKey = WEEKLY_PAYROLL_NAME_HEADERS.map((h) => headerByNorm[h]).find(Boolean);
   const fnameKey = headerByNorm['fname'] || headerByNorm['first name'];
   const lnameKey = headerByNorm['lname'] || headerByNorm['last name'];
+  // A standalone "fname" column with no accompanying "lname" column is
+  // already a full-name column in the real workbook (e.g. "Carlos Silva"),
+  // not a first-name fragment to be concatenated — only treat fname+lname
+  // as separate fields when BOTH are present.
+  const fnameIsFullName = !!(fnameKey && !lnameKey);
   const regKey = WEEKLY_PAYROLL_REGULAR_HEADERS.map((h) => headerByNorm[h]).find(Boolean);
   const otKey = WEEKLY_PAYROLL_OT_HEADERS.map((h) => headerByNorm[h]).find(Boolean);
-  if ((!nameKey && !(fnameKey && lnameKey)) || !regKey || !otKey) {
-    return { map: null, error: `Could not find the required columns. Found headers: ${headers.join(', ') || '(none)'}. Need an employee name column (e.g. "Employee" or "Name", or "fname"+"lname") and Regular/OT hours columns (e.g. "Regular Hours", "OT Hours").` };
+  const doubleKey = WEEKLY_PAYROLL_DOUBLE_HEADERS.map((h) => headerByNorm[h]).find(Boolean);
+  if ((!nameKey && !fnameIsFullName && !(fnameKey && lnameKey)) || !regKey || !otKey) {
+    return { map: null, error: `Could not find the required columns. Found headers: ${headers.join(', ') || '(none)'}. Need an employee name column (e.g. "Employee", "Name" or "fname") and Regular/OT hours columns (e.g. "Regular Hours", "Overtime Hours").` };
   }
   const map = new Map();
   objRows.forEach((row) => {
-    let name = nameKey ? String(row[nameKey] || '').trim() : `${String(row[fnameKey] || '').trim()} ${String(row[lnameKey] || '').trim()}`.trim();
+    let name;
+    if (nameKey) name = String(row[nameKey] || '').trim();
+    else if (fnameIsFullName) name = String(row[fnameKey] || '').trim();
+    else name = `${String(row[fnameKey] || '').trim()} ${String(row[lnameKey] || '').trim()}`.trim();
     if (!name) return;
     const regular = Number(row[regKey]);
     const ot = Number(row[otKey]);
-    map.set(name.toLowerCase(), { employeeName: name, regularHours: isNaN(regular) ? 0 : regular, otHours: isNaN(ot) ? 0 : ot });
+    const dbl = doubleKey ? Number(row[doubleKey]) : 0;
+    const key = name.toLowerCase();
+    const existing = map.get(key);
+    const regularAdd = isNaN(regular) ? 0 : regular;
+    const otAdd = isNaN(ot) ? 0 : ot;
+    const doubleAdd = isNaN(dbl) ? 0 : dbl;
+    if (existing) {
+      existing.regularHours += regularAdd;
+      existing.otHours += otAdd;
+      existing.doubleHours += doubleAdd;
+    } else {
+      map.set(key, { employeeName: name, regularHours: regularAdd, otHours: otAdd, doubleHours: doubleAdd });
+    }
   });
   return { map, error: map.size ? null : 'No employee rows could be read from the file.' };
 }
@@ -1231,15 +1299,37 @@ async function parseWeeklyPayrollFile(file) {
     const buf = await file.arrayBuffer();
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(buf);
-    const ws = wb.worksheets[0];
+    // Prefer the "Overtime Calculation" sheet by name (case-insensitive) —
+    // that's the authoritative source per the SOP. Fall back to the first
+    // worksheet only if no such sheet exists, so simpler single-sheet
+    // uploads still work.
+    let ws = wb.worksheets.find((s) => normHeader(s.name) === WEEKLY_PAYROLL_SHEET_NAME);
+    if (!ws) ws = wb.worksheets[0];
     if (!ws) return { map: null, error: 'The Excel file has no worksheets.' };
     let headers = [];
     const objRows = [];
+    // The real workbook's Regular/Overtime/Double Hours columns are live
+    // formulas (e.g. shared formulas like "=C2-(D2+E2)"), not static
+    // numbers, so a raw cell.value is a formula descriptor object, not the
+    // number. cellValue() reads the workbook's own already-computed result
+    // for a formula cell (never recalculating it here) and falls back to
+    // the plain value otherwise.
+    const cellValue = (cell) => {
+      const v = cell.value;
+      if (v && typeof v === 'object' && !(v instanceof Date)) {
+        if ('result' in v) return v.result;
+        if ('richText' in v) return cell.text;
+      }
+      return v === null || v === undefined ? '' : v;
+    };
     ws.eachRow((row, i) => {
-      const vals = row.values.slice(1);
-      if (i === 1) { headers = vals.map((v) => (v === null || v === undefined ? '' : String(v))); return; }
+      if (i === 1) {
+        const vals = row.values.slice(1);
+        headers = vals.map((v) => (v === null || v === undefined ? '' : String(v)));
+        return;
+      }
       const obj = {};
-      headers.forEach((h, idx) => { obj[h] = vals[idx]; });
+      headers.forEach((h, idx) => { obj[h] = cellValue(row.getCell(idx + 1)); });
       objRows.push(obj);
     });
     return parseWeeklyPayrollObjects(objRows);
