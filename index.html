@@ -1,5 +1,7 @@
-<title>Clubhouse Payroll Ledger</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<title>Clubhouse Payroll Ledger — GATP Solutions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Open+Sans:wght@400;500;600;700&family=Poppins:wght@500;600;700;800&display=swap">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/decimal.js/10.4.3/decimal.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
@@ -7,37 +9,39 @@
 <style>
   :root {
     color-scheme: light;
-    --bg: #f4f5f1;
+    --bg: #f8fafc;
     --surface: #ffffff;
-    --surface-2: #edefe9;
-    --border: #dfe2da;
-    --text: #1b241d;
-    --text-muted: #5c6a5e;
-    --accent: #2f5233;
-    --accent-strong: #23401f;
+    --surface-2: #eef2f7;
+    --border: #e2e8f0;
+    --text: #1f2937;
+    --text-muted: #64748b;
+    --accent: #1e6fb8;
+    --accent-strong: #145a94;
     --accent-contrast: #ffffff;
-    --gold: #a9793a;
-    --gold-bg: #f7ecd9;
+    --navy: #0f172a;
+    --navy-dark: #0b1220;
+    --gold: #b7791f;
+    --gold-bg: #fdf3dc;
     --ok: #1e7d4b;
     --ok-bg: #e5f3ea;
     --warn: #b7791f;
     --warn-bg: #fcf1dc;
     --err: #b3261e;
     --err-bg: #fbe9e7;
-    --shadow: 0 1px 2px rgba(20, 30, 20, 0.06), 0 4px 14px rgba(20, 30, 20, 0.05);
+    --shadow: 0 1px 3px rgba(15, 23, 42, 0.08), 0 4px 14px rgba(15, 23, 42, 0.06);
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       color-scheme: dark;
-      --bg: #14170f;
-      --surface: #1c2018;
-      --surface-2: #232a1e;
-      --border: #333c2c;
-      --text: #eaf0e6;
-      --text-muted: #a3ae9d;
-      --accent: #6fae72;
-      --accent-strong: #8dc48f;
-      --accent-contrast: #0d160d;
+      --bg: #0f1520;
+      --surface: #171f2b;
+      --surface-2: #1e2836;
+      --border: #2a3444;
+      --text: #e8edf4;
+      --text-muted: #93a1b5;
+      --accent: #5aa2e0;
+      --accent-strong: #84bcee;
+      --accent-contrast: #08121d;
       --gold: #d3a45f;
       --gold-bg: #33291a;
       --ok: #6fcb93;
@@ -51,15 +55,15 @@
   }
   :root[data-theme="dark"] {
     color-scheme: dark;
-    --bg: #14170f;
-    --surface: #1c2018;
-    --surface-2: #232a1e;
-    --border: #333c2c;
-    --text: #eaf0e6;
-    --text-muted: #a3ae9d;
-    --accent: #6fae72;
-    --accent-strong: #8dc48f;
-    --accent-contrast: #0d160d;
+    --bg: #0f1520;
+    --surface: #171f2b;
+    --surface-2: #1e2836;
+    --border: #2a3444;
+    --text: #e8edf4;
+    --text-muted: #93a1b5;
+    --accent: #5aa2e0;
+    --accent-strong: #84bcee;
+    --accent-contrast: #08121d;
     --gold: #d3a45f;
     --gold-bg: #33291a;
     --ok: #6fcb93;
@@ -75,7 +79,7 @@
   body {
     background: var(--bg);
     color: var(--text);
-    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-family: "Open Sans", system-ui, sans-serif;
     padding-inline: 16px;
     padding-block: 24px;
     line-height: 1.45;
@@ -87,8 +91,15 @@
     flex-direction: column;
     gap: 22px;
   }
-  h1, h2, h3 { font-family: "Fraunces", Georgia, serif; text-wrap: balance; margin: 0; }
-  h1 { font-size: 1.7rem; font-weight: 600; }
+  h1, h2, h3 { font-family: "Poppins", "Open Sans", system-ui, sans-serif; text-wrap: balance; margin: 0; }
+  *:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+  .brandbar { background: linear-gradient(135deg, var(--navy-dark), var(--navy) 55%, var(--accent-strong)); color: #fff; border-radius: 12px; padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; box-shadow: var(--shadow); }
+  .brandbar .id { display: flex; align-items: center; gap: 10px; }
+  .brandbar .logo { width: 40px; height: 40px; border-radius: 50%; background: #fff; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 2px rgba(255,255,255,0.25); }
+  .brandbar .nm { font-family: "Poppins", sans-serif; font-weight: 700; font-size: 1.05rem; letter-spacing: 0.4px; line-height: 1.1; }
+  .brandbar .tg { font-size: 0.72rem; opacity: 0.85; letter-spacing: 0.5px; }
+  .brandbar .client { font-size: 0.8rem; background: rgba(255,255,255,0.15); padding: 5px 12px; border-radius: 999px; font-weight: 600; }
+  h1 { font-size: 1.6rem; font-weight: 700; }
   h2 { font-size: 1.15rem; font-weight: 600; color: var(--text); }
   .num { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
 
@@ -136,6 +147,7 @@
 
   /* upload */
   .dropzone {
+    display: block;
     border: 1.5px dashed var(--border);
     border-radius: 12px;
     padding: 26px 18px;
@@ -288,6 +300,21 @@
 </style>
 
 <div class="app">
+  <div class="brandbar">
+    <div class="id">
+      <div class="logo">
+        <svg width="26" height="26" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M24 6c9.94 0 18 8.06 18 18 0 6.2-3.14 11.67-7.92 14.9" stroke="#1e6fb8" stroke-width="3.4" stroke-linecap="round"/>
+          <path d="M9 33 C7 27 7 21 9 15" stroke="#1e6fb8" stroke-width="3.4" stroke-linecap="round"/>
+          <path d="M17 10 L20 24" stroke="#e53935" stroke-width="3" stroke-linecap="round"/>
+          <path d="M23 8 L25 24" stroke="#e53935" stroke-width="3" stroke-linecap="round"/>
+          <path d="M29 9 L29 24" stroke="#e53935" stroke-width="3" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div><div class="nm">GATP Solutions</div><div class="tg">Payroll &amp; Billing Automation</div></div>
+    </div>
+    <div class="client">Billing client: LXP</div>
+  </div>
   <div class="topbar">
     <div>
       <div class="eyebrow">Payroll Billing Dashboard</div>
@@ -474,7 +501,7 @@
     </details>
   </section>
 
-  <footer>Calculations run entirely in your browser. Nothing is uploaded anywhere.</footer>
+  <footer>GATP Solutions · Calculations run entirely in your browser. Nothing is uploaded anywhere.</footer>
 </div>
 
 <script>
@@ -710,9 +737,19 @@ const Engine = (function () {
     return weeklyRows.map((w) => {
       const totalEntityHours = entityNames.reduce((sum, name) => sum.plus(w.entityHours[name] || D(0)), D(0));
       const clubhouseHours = w.entityHours['Clubhouse'] || D(0);
-      let clubhouseRatio = D(0);
-      if (!totalEntityHours.isZero()) clubhouseRatio = clubhouseHours.div(totalEntityHours).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-      return { employeeName: w.employeeName, totalEntityHours, clubhouseHours, clubhouseRatio, entityHours: w.entityHours };
+      // clubhouseRatioExact: FULL PRECISION — this is what must be used for
+      // any dollar math (multiplying into Regular/OT hours below). Verified
+      // against the real reference workbook: an employee's billable hours
+      // in the "New summary(working)" sheet only reproduce exactly (to 8
+      // decimal places) when the unrounded ratio is used — rounding the
+      // ratio to 2dp first and THEN multiplying inflates/deflates every
+      // downstream dollar figure.
+      // clubhouseRatio: rounded to 2dp — for DISPLAY ONLY (the Employee
+      // review table, Data sheet, etc.), never for a calculation.
+      let clubhouseRatioExact = D(0);
+      if (!totalEntityHours.isZero()) clubhouseRatioExact = clubhouseHours.div(totalEntityHours);
+      const clubhouseRatio = clubhouseRatioExact.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+      return { employeeName: w.employeeName, totalEntityHours, clubhouseHours, clubhouseRatio, clubhouseRatioExact, entityHours: w.entityHours };
     });
   }
 
@@ -784,7 +821,11 @@ const Engine = (function () {
         // Informational only (Daily OT Audit sheet) — computed from the
         // timesheet, NOT used for billing amounts below.
         workHours: w.workHours, restHours: w.restHours, lunchHours: w.lunchHours, paidHours: w.paidHours,
-        clubhouseRatio: ratioInfo ? ratioInfo.clubhouseRatio : D(0), entityHours: w.entityHours,
+        // clubhouseRatio: rounded, for display only. clubhouseRatioExact:
+        // full precision, used for the actual billing math below.
+        clubhouseRatio: ratioInfo ? ratioInfo.clubhouseRatio : D(0),
+        clubhouseRatioExact: ratioInfo ? ratioInfo.clubhouseRatioExact : D(0),
+        entityHours: w.entityHours,
         hourlyRate, hourlyRateSource, classification, isExcluded, doubleHours, errors: [],
       };
       if (hourlyRate === null || hourlyRate === undefined) result.errors.push('MISSING_HOURLY_RATE');
@@ -803,7 +844,9 @@ const Engine = (function () {
       }
       const regularHours = D(payrollEntry.regularHours);
       const otHours = D(payrollEntry.otHours);
-      const effectiveRatio = isExcluded ? D(0) : result.clubhouseRatio;
+      // Use the EXACT ratio here, not the rounded display value — see the
+      // comment in calculateEntityRatios.
+      const effectiveRatio = isExcluded ? D(0) : result.clubhouseRatioExact;
       const clubhouseRegularHours = regularHours.times(effectiveRatio);
       const clubhouseOtHours = otHours.times(effectiveRatio);
       const regularRate = D(hourlyRate);
@@ -860,7 +903,7 @@ const Engine = (function () {
 
   function calculateInvoice(finalRows, payrollConfig) {
     const withBill = finalRows.map((row) => { if (row.errors.length) return row; const employeeBill = row.totalGross.plus(row.employerTax).plus(row.wcAmount); return { ...row, employeeBill }; });
-    const billable = withBill.filter((r) => !r.errors.length && !r.isExcluded && r.clubhouseRatio.gt(0));
+    const billable = withBill.filter((r) => !r.errors.length && !r.isExcluded && r.clubhouseRatioExact.gt(0));
     const clubhouseSubtotal = billable.reduce((sum, r) => sum.plus(r.employeeBill), D(0));
     const serviceChargeRate = D(payrollConfig.serviceChargeRate !== undefined ? payrollConfig.serviceChargeRate : 0.1);
     const serviceCharge = clubhouseSubtotal.times(serviceChargeRate);
@@ -964,13 +1007,47 @@ const Engine = (function () {
     // may be reused across multiple runPipeline calls, e.g. re-clicking
     // "Process" in the UI) is never mutated in place.
     const workingPayrollMap = weeklyPayrollMap ? new Map([...weeklyPayrollMap].map(([k, v]) => [k, Object.assign({}, v, { dates: (v.dates || []).slice() })])) : weeklyPayrollMap;
+    // Reconciliation safety net: the weekly payroll sheet's Regular+OT+Double
+    // must equal the timesheet's billable paid hours (everything except RSC
+    // and lunch) for each employee — verified exact to the cent on every
+    // week checked. A mismatch means the sheet and timesheet don't describe
+    // the same hours (doubled rows, stale dates, wrong week, missing person).
+    const reconciliation = [];
+    if (weeklyPayrollMap) {
+      const tsPaidByEmp = new Map();
+      daily.forEach((d) => { const k = d.employeeName.trim().toLowerCase(); tsPaidByEmp.set(k, (tsPaidByEmp.get(k) || 0) + Number(d.billablePaidHours)); });
+      const tsWorkByEmp = new Map();
+      daily.forEach((d) => { const k = d.employeeName.trim().toLowerCase(); tsWorkByEmp.set(k, (tsWorkByEmp.get(k) || 0) + Number(d.entityWorkHours)); });
+      const seen = new Set();
+      weeklyPayrollMap.forEach((pe, k) => {
+        seen.add(k);
+        const sheet = pe.regularHours + pe.otHours + pe.doubleHours;
+        const tsPaid = tsPaidByEmp.get(k) || 0;
+        if (Math.abs(sheet - tsPaid) > 0.05 && (sheet > 0 || tsPaid > 0)) reconciliation.push({ employeeName: pe.employeeName, sheetHours: sheet, timesheetHours: tsPaid });
+      });
+      tsPaidByEmp.forEach((tsPaid, k) => {
+        if (!seen.has(k) && tsPaid > 0.05 && (tsWorkByEmp.get(k) || 0) > 0.05) { const e = daily.find((d) => d.employeeName.trim().toLowerCase() === k); reconciliation.push({ employeeName: e ? e.employeeName : k, sheetHours: 0, timesheetHours: tsPaid, missingFromSheet: true }); }
+      });
+    }
     const autoFilledDays = [];
+    const staleDated = [];
     inScope.forEach((w) => {
       const key = w.employeeName.trim().toLowerCase();
       const payrollEntry = workingPayrollMap ? workingPayrollMap.get(key) : null;
       if (!payrollEntry || !payrollEntry.dates || !payrollEntry.dates.length) return;
       const payrollDateSet = new Set(payrollEntry.dates);
       const tsDates = timesheetDatesByEmployee.get(key) || new Set();
+      // If NONE of this employee's payroll-sheet dates fall on a timesheet
+      // day, the sheet's date column is stale (e.g. last week's dates left
+      // in place) — the hours in those rows are still this employee's
+      // totals. Auto-filling every timesheet day on top of them would
+      // double-count the week (Sylvia Lopez, Oct 19-25: sheet dated
+      // 10-12..10-16 with 32.00 Regular, timesheet days 10-20..10-23 ->
+      // 4 "missing" days auto-filled -> 64.00). Use the sheet as-is and warn.
+      if (tsDates.size && ![...payrollDateSet].some((d) => tsDates.has(d))) {
+        staleDated.push({ employeeName: w.employeeName, payrollDates: [...payrollDateSet].sort(), timesheetDates: [...tsDates].sort() });
+        return;
+      }
       const missing = [...tsDates].filter((d) => !payrollDateSet.has(d)).sort();
       if (!missing.length) return;
       const canAutoFill = payrollConfig.dailyOvertimeLimit !== undefined && payrollConfig.dailyOvertimeLimit !== null && payrollConfig.dailyRegularLimit !== undefined && payrollConfig.dailyRegularLimit !== null;
@@ -1009,6 +1086,8 @@ const Engine = (function () {
     const invoice = calculateInvoice(payroll, payrollConfig);
     invoice.excludedFromScope = excludedFromScope;
     invoice.autoFilledDays = autoFilledDays;
+    invoice.staleDatedEmployees = staleDated;
+    invoice.reconciliation = reconciliation;
 
     invoice.employees.forEach((row) => {
       if (row.errors.includes('MISSING_HOURLY_RATE')) validationErrors.push({ type: 'MISSING_HOURLY_RATE', message: `Missing hourly rate for ${row.employeeName} — not found in the weekly payroll sheet's own "Hourly Rates" tab. Add that employee's rate to the "Hourly Rates" tab in the uploaded weekly payroll workbook and re-upload.` });
@@ -1127,7 +1206,7 @@ function generateExcelWorkbook(result, payrollConfig) {
   const billHeader = nc.addRow(['fullname', 'Regular hr', 'OT hr', 'Regular Rate', 'OT rate', 'Gross (Regular)', 'Gross (OT)', 'Total Gross Payment', 'Employer Tax rate', 'Tax Amount', 'WC Rate', '2/3 exempt OT', 'WC Amount', 'Total Bill to LXP', 'Raw Weekly Regular Hrs', 'Raw Weekly OT Hrs', 'Raw Weekly Double Hrs', 'Status']);
   styleHeaderRow(billHeader);
   reportRows.forEach((e) => {
-    const status = e.errors.length ? e.status : (e.isExcluded && e.classification) ? `${e.classification.keyword} (excluded)` : e.isExcluded ? 'Excluded' : e.clubhouseRatio.gt(0) ? 'Billable' : 'Not Clubhouse';
+    const status = e.errors.length ? e.status : (e.isExcluded && e.classification) ? `${e.classification.keyword} (excluded)` : e.isExcluded ? 'Excluded' : e.clubhouseRatioExact.gt(0) ? 'Billable' : 'Not Clubhouse';
     const row = nc.addRow([
       e.employeeName,
       e.errors.length ? '' : num(e.clubhouseRegularHours), e.errors.length ? '' : num(e.clubhouseOtHours),
@@ -1161,6 +1240,8 @@ function generateExcelWorkbook(result, payrollConfig) {
   nc.addRow([]);
   if (classifiedExcluded.length) nc.addRow([`** Excluded from Clubhouse billing by job-code classification (payroll_config.json jobClassifications, excludeFromClubhouse: true) — shown here for audit only: ${classifiedExcluded.join(', ')}`]);
   if (excludedFromScope.length) nc.addRow([`** Had Clubhouse/BluntD/Crysp hours this week but are calculated in a separate payroll process (payroll_config.json clubhouseExclusions) — not billed here: ${excludedFromScope.join(', ')}`]);
+  (inv.reconciliation || []).forEach((x) => nc.addRow([`** CHECK DATA: ${x.employeeName} — payroll sheet ${x.sheetHours.toFixed(2)} hrs vs timesheet ${x.timesheetHours.toFixed(2)} hrs do not match.`]));
+  (inv.staleDatedEmployees || []).forEach((x) => nc.addRow([`** ${x.employeeName}: weekly payroll sheet rows are dated ${x.payrollDates.join(', ')} (outside this timesheet week) — hours used as in the sheet, not auto-filled. Please correct the dates in the payroll sheet.`]));
   const autoFilledDays = inv.autoFilledDays || [];
   if (autoFilledDays.length) {
     nc.addRow([`** ${autoFilledDays.length} day(s) missing from the uploaded weekly payroll sheet were auto-filled from the timesheet using the payroll workbook's own daily formula (Regular=MIN(paid,dailyRegularLimit), OT=next up to dailyOvertimeLimit, Double=beyond that) — every other day for these employees came straight from the uploaded sheet, unchanged:`]);
@@ -1254,14 +1335,22 @@ function renderValidation(result) {
   const autoFilled = (result.invoice && result.invoice.autoFilledDays) || [];
   const dailyLimit = CONFIG && CONFIG.payrollConfig ? CONFIG.payrollConfig.dailyRegularLimit : 8;
   const otLimit = CONFIG && CONFIG.payrollConfig ? CONFIG.payrollConfig.dailyOvertimeLimit : 4;
+  const stale = (result.invoice && result.invoice.staleDatedEmployees) || [];
+  const recon = (result.invoice && result.invoice.reconciliation) || [];
+  const reconNote = recon.length
+    ? `<div class="banner err"><div><div class="title">Check the data: payroll sheet hours don't match the timesheet for ${recon.length} employee(s)</div>The weekly payroll sheet's Regular + OT + Double hours should equal the timesheet's paid hours (excluding RSC and lunch). These don't, so the numbers below may be wrong until the files are fixed.<ul>${recon.map((x) => `<li>${x.employeeName}: payroll sheet ${x.sheetHours.toFixed(2)} hrs vs timesheet ${x.timesheetHours.toFixed(2)} hrs${x.missingFromSheet ? ' (not in the payroll sheet at all)' : ''}</li>`).join('')}</ul></div></div>`
+    : '';
+  const staleNote = stale.length
+    ? `<div class="banner warn"><div><div class="title">Payroll sheet dates don't match this week for ${stale.length} employee(s)</div>These employees' rows in the "Overtime Calculation" sheet are dated outside the timesheet week, so their hours were used as they are and NOT auto-filled (auto-filling would double them). Please correct the dates in the payroll sheet.<ul>${stale.map((x) => `<li>${x.employeeName}: payroll sheet dates ${x.payrollDates.join(', ')} — timesheet dates ${x.timesheetDates.join(', ')}</li>`).join('')}</ul></div></div>`
+    : '';
   const autoFillNote = autoFilled.length
     ? `<div class="banner warn"><div><div class="title">${autoFilled.length} day(s) auto-filled from the timesheet</div>The weekly payroll sheet was missing these employee/date rows entirely, so Regular/OT/Double for just that day were computed from the timesheet's paid hours using the same daily formula the payroll workbook itself uses (Regular = MIN(paid, ${dailyLimit}), OT = next up to ${otLimit} hrs, Double = anything beyond). Every other day for these employees still comes straight from the uploaded payroll sheet, unchanged.<ul>${autoFilled.map((a) => `<li>${a.employeeName}, ${a.date}: paid ${fmtHours(a.paidHours)} hrs → Regular ${fmtHours(a.regularHours)}, OT ${fmtHours(a.otHours)}, Double ${fmtHours(a.doubleHours)}</li>`).join('')}</ul></div></div>`
     : '';
   if (result.canGenerate) {
-    slot.innerHTML = `<div class="banner ok"><div><div class="title">Ready</div>All rows validated — hourly rates, tax and workers' comp configuration are complete for every employee found.</div></div>${autoFillNote}`;
+    slot.innerHTML = `<div class="banner ok"><div><div class="title">Ready</div>All rows validated — hourly rates, tax and workers' comp configuration are complete for every employee found.</div></div>${reconNote}${staleNote}${autoFillNote}`;
   } else {
     const items = result.validationErrors.map((e) => `<li>${e.message}</li>`).join('');
-    slot.innerHTML = `<div class="banner err"><div><div class="title">Cannot generate — ${result.validationErrors.length} issue(s) found</div><ul>${items}</ul></div></div>${autoFillNote}`;
+    slot.innerHTML = `<div class="banner err"><div><div class="title">Cannot generate — ${result.validationErrors.length} issue(s) found</div><ul>${items}</ul></div></div>${reconNote}${staleNote}${autoFillNote}`;
   }
 }
 
@@ -1298,7 +1387,7 @@ function renderEmployeeTable(result) {
     else if (e.errors.length) statusPill = `<span class="pill warn">${e.status}</span>`;
     else if (e.isExcluded && e.classification) statusPill = `<span class="pill muted">${e.classification.keyword} (excluded)</span>`;
     else if (e.isExcluded) statusPill = `<span class="pill muted">Excluded</span>`;
-    else if (e.clubhouseRatio.gt(0)) statusPill = `<span class="pill ok">Billable</span>`;
+    else if (e.clubhouseRatioExact.gt(0)) statusPill = `<span class="pill ok">Billable</span>`;
     else statusPill = `<span class="pill muted">Not Clubhouse</span>`;
 
     const cell = (v, money) => (e.errors.length ? '—' : money ? fmtMoney(v) : fmtHours(v));
@@ -1428,6 +1517,13 @@ function parseWeeklyPayrollObjects(objRows) {
     return { map: null, error: `Could not find the required columns. Found headers: ${headers.join(', ') || '(none)'}. Need an employee name column (e.g. "Employee", "Name" or "fname") and Regular/OT hours columns (e.g. "Regular Hours", "Overtime Hours").` };
   }
   const map = new Map();
+  // The sheet is one row per employee per day. If the exact same
+  // employee + date + Regular/OT/Double row appears more than once (e.g. a
+  // block pasted in twice), summing would double that employee's hours
+  // (a 32-hr week showing as 64). Identical repeats are skipped and
+  // reported so the user can see which rows were ignored.
+  const seenRows = new Set();
+  const duplicatesSkipped = [];
   objRows.forEach((row) => {
     let name;
     if (nameKey) name = String(row[nameKey] || '').trim();
@@ -1439,6 +1535,11 @@ function parseWeeklyPayrollObjects(objRows) {
     const dbl = doubleKey ? Number(row[doubleKey]) : 0;
     const dateStr = dateKey ? normalizeDateValue(row[dateKey]) : null;
     const key = name.toLowerCase();
+    if (dateStr) {
+      const sig = [key, dateStr, regular, ot, dbl].join('|');
+      if (seenRows.has(sig)) { duplicatesSkipped.push({ employeeName: name, date: dateStr, regular, ot, double: dbl }); return; }
+      seenRows.add(sig);
+    }
     const existing = map.get(key);
     const regularAdd = isNaN(regular) ? 0 : regular;
     const otAdd = isNaN(ot) ? 0 : ot;
@@ -1452,7 +1553,7 @@ function parseWeeklyPayrollObjects(objRows) {
       map.set(key, { employeeName: name, regularHours: regularAdd, otHours: otAdd, doubleHours: doubleAdd, dates: dateStr ? [dateStr] : [] });
     }
   });
-  return { map, error: map.size ? null : 'No employee rows could be read from the file.' };
+  return { map, duplicatesSkipped, error: map.size ? null : 'No employee rows could be read from the file.' };
 }
 
 async function parseWeeklyPayrollFile(file) {
@@ -1547,7 +1648,13 @@ function handlePayrollFile(file) {
   if (!file || !CONFIG) return;
   $('metaPayrollFile').textContent = file.name;
   $('payrollFileError').style.display = 'none';
-  parseWeeklyPayrollFile(file).then(({ map, error }) => {
+  parseWeeklyPayrollFile(file).then(({ map, error, duplicatesSkipped }) => {
+    if (!error && duplicatesSkipped && duplicatesSkipped.length) {
+      const byEmp = {};
+      duplicatesSkipped.forEach((d) => { byEmp[d.employeeName] = (byEmp[d.employeeName] || 0) + 1; });
+      $('payrollFileError').style.display = '';
+      $('payrollFileError').innerHTML = `<div class="banner warn"><div><div class="title">${duplicatesSkipped.length} duplicate row(s) in the payroll sheet were ignored</div>The "Overtime Calculation" sheet lists the same employee, date and hours more than once, so counting them would double the hours. Only one copy of each was used: ${Object.entries(byEmp).map(([n, c]) => `${n} (${c} repeated)`).join(', ')}. Please also check the sheet and remove the repeated rows.</div></div>`;
+    }
     if (error) {
       PARSED_WEEKLY_PAYROLL = null;
       $('payrollUploadMeta').hidden = true;
