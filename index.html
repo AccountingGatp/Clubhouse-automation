@@ -737,15 +737,9 @@ const Engine = (function () {
     return weeklyRows.map((w) => {
       const totalEntityHours = entityNames.reduce((sum, name) => sum.plus(w.entityHours[name] || D(0)), D(0));
       const clubhouseHours = w.entityHours['Clubhouse'] || D(0);
-      // clubhouseRatioExact: FULL PRECISION — this is what must be used for
-      // any dollar math (multiplying into Regular/OT hours below). Verified
-      // against the real reference workbook: an employee's billable hours
-      // in the "New summary(working)" sheet only reproduce exactly (to 8
-      // decimal places) when the unrounded ratio is used — rounding the
-      // ratio to 2dp first and THEN multiplying inflates/deflates every
-      // downstream dollar figure.
-      // clubhouseRatio: rounded to 2dp — for DISPLAY ONLY (the Employee
-      // review table, Data sheet, etc.), never for a calculation.
+      // The reference workbook uses ROUND(ClubhouseHours / TotalEntityHours, 2).
+      // clubhouseRatio is the rounded two-decimal value used for billing;
+      // clubhouseRatioExact is kept only as a traceable audit value.
       let clubhouseRatioExact = D(0);
       if (!totalEntityHours.isZero()) clubhouseRatioExact = clubhouseHours.div(totalEntityHours);
       const clubhouseRatio = clubhouseRatioExact.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
@@ -821,8 +815,8 @@ const Engine = (function () {
         // Informational only (Daily OT Audit sheet) — computed from the
         // timesheet, NOT used for billing amounts below.
         workHours: w.workHours, restHours: w.restHours, lunchHours: w.lunchHours, paidHours: w.paidHours,
-        // clubhouseRatio: rounded, for display only. clubhouseRatioExact:
-        // full precision, used for the actual billing math below.
+        // clubhouseRatio: rounded to 2dp and used for all billing math.
+        // clubhouseRatioExact: retained only for audit/reference.
         clubhouseRatio: ratioInfo ? ratioInfo.clubhouseRatio : D(0),
         clubhouseRatioExact: ratioInfo ? ratioInfo.clubhouseRatioExact : D(0),
         entityHours: w.entityHours,
@@ -844,9 +838,10 @@ const Engine = (function () {
       }
       const regularHours = D(payrollEntry.regularHours);
       const otHours = D(payrollEntry.otHours);
-      // Use the EXACT ratio here, not the rounded display value — see the
-      // comment in calculateEntityRatios.
-      const effectiveRatio = isExcluded ? D(0) : result.clubhouseRatioExact;
+      // Match the client workbook: =ROUND(ClubhouseHours / TotalEntityHours, 2).
+      // Use this rounded ratio consistently in REG/OT wages, employer taxes,
+      // workers comp and invoice calculations. Retain exact ratio for audit.
+      const effectiveRatio = isExcluded ? D(0) : result.clubhouseRatio;
       const clubhouseRegularHours = regularHours.times(effectiveRatio);
       const clubhouseOtHours = otHours.times(effectiveRatio);
       const regularRate = D(hourlyRate);
